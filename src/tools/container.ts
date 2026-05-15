@@ -1,24 +1,56 @@
 /**
  * Container Tools
  *
- * Tools for listing, inspecting, managing, and monitoring Docker containers.
+ * Tools for listing, inspecting, and controlling Docker container lifecycle
+ * on Komodo-managed servers.
+ *
+ * Tools (5):
+ * - `komodo_container_list`        — list containers on a server
+ * - `komodo_container_inspect`     — Docker inspect data
+ * - `komodo_container_logs`        — stdout/stderr logs
+ * - `komodo_container_search_logs` — keyword search across logs
+ * - `komodo_container_action`      — consolidated lifecycle (start/stop/restart/pause/unpause)
  *
  * @module tools/container
  */
 
-import { defineTool, text, z } from "mcp-server-framework";
+import { defineTool, structured, z } from "mcp-server-framework";
 import { Types } from "komodo_client";
-import { PARAM_DESCRIPTIONS, CONTAINER_LOGS_DEFAULTS, LOG_DESCRIPTIONS, LOG_SEARCH_DEFAULTS } from "../config/index.js";
 import {
-  formatLogsResponse,
-  formatSearchResponse,
-  formatPruneResponse,
+  PARAM_DESCRIPTIONS,
+  CONTAINER_LOGS_DEFAULTS,
+  LOG_DESCRIPTIONS,
+  LOG_SEARCH_DEFAULTS,
+  ToolCategories,
+  ToolScopes,
+  config,
+} from "../config/index.js";
+import {
   requireClient,
   wrapApiCall,
   wrapExecuteAndPoll,
-  formatUpdateResult,
+  buildActionResult,
+  extractUpdateId,
+  paginate,
+  renderContainerList,
+  renderContainerInspect,
+  renderContainerLogs,
+  renderContainerSearchLogs,
+  renderActionResult,
+  tryRegisterResource,
 } from "../utils/index.js";
-import { pruneTargetSchema, containerActionSchema, serverIdSchema, containerNameSchema } from "./schemas/index.js";
+import {
+  containerActionInputSchema,
+  serverIdSchema,
+  containerNameSchema,
+  containerListOutputSchema,
+  containerInspectOutputSchema,
+  containerLogsOutputSchema,
+  containerSearchLogsOutputSchema,
+  actionResultSchema,
+  inlineFullInputSchema,
+  paginationInputSchema,
+} from "./schemas/index.js";
 
 type ContainerListItem = Types.ContainerListItem;
 type Log = Types.Log;
@@ -28,13 +60,18 @@ type Log = Types.Log;
 // ============================================================================
 
 export const listContainersTool = defineTool({
-  name: "komodo_list_containers",
+  name: "komodo_container_list",
   description:
     "List all containers on a server, including running, stopped, and paused containers. Shows container name, state, and image.",
-  input: z.object({
-    server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_TO_LIST_CONTAINERS),
-  }),
+  input: z
+    .object({
+      server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_TO_LIST_CONTAINERS),
+    })
+    .merge(paginationInputSchema),
+  output: containerListOutputSchema,
   annotations: { readOnlyHint: true },
+  _meta: { category: ToolCategories.CONTAINER },
+  requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     const containers = await wrapApiCall(
@@ -43,11 +80,15 @@ export const listContainersTool = defineTool({
       abortSignal,
     );
 
-    const containerList =
-      containers.map((c: ContainerListItem) => `• ${c.name} (${c.state}) - ${c.image || "Unknown Image"}`).join("\n") ||
-      "No containers found.";
+    const allItems = containers.map((c: ContainerListItem) => ({
+      name: c.name,
+      state: c.state,
+      ...(c.image ? { image: c.image } : {}),
+    }));
 
-    return text(`📦 Containers on server "${args.server}":\n\n${containerList}`);
+    const { items, page } = paginate(allItems, args.cursor, args.page_size);
+    const payload = { items: [...items], page };
+    return structured(payload, { text: renderContainerList(payload) });
   },
 });
 
@@ -56,22 +97,43 @@ export const listContainersTool = defineTool({
 // ============================================================================
 
 export const inspectContainerTool = defineTool({
-  name: "komodo_inspect_container",
+  name: "komodo_container_inspect",
   description:
     "Get detailed low-level information about a container. Returns Docker inspect data including configuration, state, network settings, mounts, and process info.",
-  input: z.object({
-    server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
-    container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_INSPECT),
-  }),
+  input: z
+    .object({
+      server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
+      container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_INSPECT),
+    })
+    .merge(inlineFullInputSchema),
+  output: containerInspectOutputSchema,
   annotations: { readOnlyHint: true },
-  handler: async (args, { abortSignal }) => {
+  _meta: { category: ToolCategories.CONTAINER },
+  requiredScopes: [ToolScopes.READ],
+  handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
     const result = await wrapApiCall(
       "inspectContainer",
       () => komodo.client.read("InspectDockerContainer", { server: args.server, container: args.container }),
       abortSignal,
     );
-    return text(JSON.stringify(result, null, 2));
+    const link = tryRegisterResource({
+      ctx: { sessionId },
+      category: "inspect",
+      name: `${args.container} (inspect)`,
+      mimeType: "application/json",
+      content: JSON.stringify(result, null, 2),
+      ttlMs: config.KOMODO_RESOURCE_TTL_INFO,
+      inlineFull: args.inline_full,
+      description: `Docker inspect data for container ${args.container} on ${args.server}`,
+    });
+    const payload = link
+      ? { summary: { name: args.container }, resourceLink: link }
+      : { summary: { name: args.container }, inspect: result };
+    return structured(payload, {
+      text: renderContainerInspect(payload),
+      ...(link ? { links: [link] } : {}),
+    });
   },
 });
 
@@ -80,27 +142,32 @@ export const inspectContainerTool = defineTool({
 // ============================================================================
 
 export const getContainerLogsTool = defineTool({
-  name: "komodo_get_container_logs",
+  name: "komodo_container_logs",
   description:
     "Get stdout and stderr logs from a container. Useful for debugging, monitoring application output, and troubleshooting issues.",
-  input: z.object({
-    server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
-    container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_LOGS),
-    tail: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .default(CONTAINER_LOGS_DEFAULTS.TAIL)
-      .describe(LOG_DESCRIPTIONS.TAIL_LINES(CONTAINER_LOGS_DEFAULTS.TAIL)),
-    timestamps: z
-      .boolean()
-      .optional()
-      .default(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)
-      .describe(LOG_DESCRIPTIONS.TIMESTAMPS(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)),
-  }),
+  input: z
+    .object({
+      server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
+      container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_LOGS),
+      tail: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(CONTAINER_LOGS_DEFAULTS.TAIL)
+        .describe(LOG_DESCRIPTIONS.TAIL_LINES(CONTAINER_LOGS_DEFAULTS.TAIL)),
+      timestamps: z
+        .boolean()
+        .optional()
+        .default(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)
+        .describe(LOG_DESCRIPTIONS.TIMESTAMPS(CONTAINER_LOGS_DEFAULTS.TIMESTAMPS)),
+    })
+    .merge(inlineFullInputSchema),
+  output: containerLogsOutputSchema,
   annotations: { readOnlyHint: true },
-  handler: async (args, { abortSignal }) => {
+  _meta: { category: ToolCategories.CONTAINER },
+  requiredScopes: [ToolScopes.READ],
+  handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
 
     const result: Log = await wrapApiCall(
@@ -115,23 +182,36 @@ export const getContainerLogsTool = defineTool({
       abortSignal,
     );
 
-    let logContent = "";
-    if (result.stdout) {
-      logContent += result.stdout;
-    }
-    if (result.stderr) {
-      if (logContent) logContent += "\n\n=== STDERR ===\n";
-      logContent += result.stderr;
-    }
+    const stdout = result.stdout;
+    const stderr = result.stderr;
+    const fullLogs =
+      stdout || stderr
+        ? [stdout && `=== stdout ===\n${stdout}`, stderr && `=== stderr ===\n${stderr}`].filter(Boolean).join("\n\n")
+        : "";
+    const link = fullLogs
+      ? tryRegisterResource({
+          ctx: { sessionId },
+          category: "logs",
+          name: `${args.container} (logs)`,
+          mimeType: "text/plain",
+          content: fullLogs,
+          ttlMs: config.KOMODO_RESOURCE_TTL_LOGS,
+          inlineFull: args.inline_full,
+          description: `Container logs for ${args.container} on ${args.server}`,
+        })
+      : null;
 
-    return text(
-      formatLogsResponse({
-        containerName: args.container,
-        serverName: args.server,
-        logs: logContent,
-        lines: args.tail,
-      }),
-    );
+    const payload = link
+      ? { summary: { name: args.container }, resourceLink: link }
+      : {
+          summary: { name: args.container },
+          ...(stdout ? { stdout } : {}),
+          ...(stderr ? { stderr } : {}),
+        };
+    return structured(payload, {
+      text: renderContainerLogs(payload),
+      ...(link ? { links: [link] } : {}),
+    });
   },
 });
 
@@ -140,28 +220,33 @@ export const getContainerLogsTool = defineTool({
 // ============================================================================
 
 export const searchContainerLogsTool = defineTool({
-  name: "komodo_search_logs",
+  name: "komodo_container_search_logs",
   description:
-    "Search container logs for specific patterns or keywords. Retrieves logs and filters them client-side. Returns matching lines with a count of matches.",
-  input: z.object({
-    server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
-    container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_SEARCH),
-    query: z.string().describe(LOG_DESCRIPTIONS.SEARCH_QUERY),
-    tail: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .default(LOG_SEARCH_DEFAULTS.TAIL)
-      .describe(LOG_DESCRIPTIONS.TAIL_LINES_FOR_SEARCH(LOG_SEARCH_DEFAULTS.TAIL)),
-    caseSensitive: z
-      .boolean()
-      .optional()
-      .default(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)
-      .describe(LOG_DESCRIPTIONS.CASE_SENSITIVE(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)),
-  }),
+    "Search container logs for specific patterns or keywords. Retrieves logs and filters them client-side. Returns matching lines with a count of matches. Large match sets are offloaded as a session-scoped resource link unless `inline_full` is set.",
+  input: z
+    .object({
+      server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
+      container: containerNameSchema.describe(PARAM_DESCRIPTIONS.CONTAINER_ID_FOR_SEARCH),
+      query: z.string().describe(LOG_DESCRIPTIONS.SEARCH_QUERY),
+      tail: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(LOG_SEARCH_DEFAULTS.TAIL)
+        .describe(LOG_DESCRIPTIONS.TAIL_LINES_FOR_SEARCH(LOG_SEARCH_DEFAULTS.TAIL)),
+      caseSensitive: z
+        .boolean()
+        .optional()
+        .default(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)
+        .describe(LOG_DESCRIPTIONS.CASE_SENSITIVE(LOG_SEARCH_DEFAULTS.CASE_SENSITIVE)),
+    })
+    .merge(inlineFullInputSchema),
+  output: containerSearchLogsOutputSchema,
   annotations: { readOnlyHint: true },
-  handler: async (args, { abortSignal }) => {
+  _meta: { category: ToolCategories.CONTAINER },
+  requiredScopes: [ToolScopes.READ],
+  handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
 
     const result: Log = await wrapApiCall(
@@ -176,175 +261,86 @@ export const searchContainerLogsTool = defineTool({
       abortSignal,
     );
 
-    const logContent = result.stdout + (result.stderr ? "\n" + result.stderr : "");
-    const lines = logContent.split("\n");
+    const stdoutLines = result.stdout
+      ? result.stdout.split("\n").map((line) => ({ stream: "stdout" as const, line }))
+      : [];
+    const stderrLines = result.stderr
+      ? result.stderr.split("\n").map((line) => ({ stream: "stderr" as const, line }))
+      : [];
+    const allLines = [...stdoutLines, ...stderrLines];
     const query = args.caseSensitive ? args.query : args.query.toLowerCase();
-
-    const filteredLines = lines.filter((line) => {
-      const searchLine = args.caseSensitive ? line : line.toLowerCase();
-      return searchLine.includes(query);
+    const matches = allLines.filter(({ line }) => {
+      const haystack = args.caseSensitive ? line : line.toLowerCase();
+      return haystack.includes(query);
     });
 
-    return text(
-      formatSearchResponse({
-        containerName: args.container,
-        serverName: args.server,
-        query: args.query,
-        matchCount: filteredLines.length,
-        matches: filteredLines.join("\n"),
+    const link =
+      matches.length > 0
+        ? tryRegisterResource({
+            ctx: { sessionId },
+            category: "logs",
+            name: `${args.container} (search: ${args.query})`,
+            mimeType: "text/plain",
+            content: matches.map((m) => `[${m.stream}] ${m.line}`).join("\n"),
+            ttlMs: config.KOMODO_RESOURCE_TTL_LOGS,
+            inlineFull: args.inline_full,
+            description: `${matches.length} matching log line(s) for query "${args.query}" in ${args.container}`,
+          })
+        : null;
+
+    const payload = link
+      ? { summary: { name: args.container }, matches: [], resourceLink: link }
+      : { summary: { name: args.container }, matches };
+    return structured(payload, {
+      text: renderContainerSearchLogs({
+        summary: payload.summary,
+        matches,
+        ...(link ? { resourceLink: link } : {}),
       }),
-    );
+      ...(link ? { links: [link] } : {}),
+    });
   },
 });
 
 // ============================================================================
-// Prune
+// Lifecycle
 // ============================================================================
 
-/** Maps prune target names to Komodo API action names */
-const PRUNE_ACTION_MAP: Record<string, string> = {
-  containers: "PruneContainers",
-  images: "PruneImages",
-  volumes: "PruneVolumes",
-  networks: "PruneNetworks",
-  system: "PruneSystem",
-};
+/** Maps the action enum to the corresponding Komodo execute API name. */
+const CONTAINER_ACTION_API_MAP = {
+  start: "StartContainer",
+  stop: "StopContainer",
+  restart: "RestartContainer",
+  pause: "PauseContainer",
+  unpause: "UnpauseContainer",
+} as const satisfies Record<
+  z.infer<typeof containerActionInputSchema>["action"],
+  "StartContainer" | "StopContainer" | "RestartContainer" | "PauseContainer" | "UnpauseContainer"
+>;
 
-export const pruneResourcesTool = defineTool({
-  name: "komodo_prune",
+export const containerActionTool = defineTool({
+  name: "komodo_container_action",
   description:
-    "Prune unused resources on a server. This permanently removes stopped containers, unused images, volumes, or networks to free up resources.",
-  input: z.object({
-    server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID),
-    pruneTarget: pruneTargetSchema,
-  }),
-  annotations: { destructiveHint: true },
+    "Run a lifecycle action on a Docker container: start, stop, restart, pause, or unpause. " +
+    "The container must exist on the target server. " +
+    "Note: pause/unpause use cgroups freezer; restart is stop+start.",
+  input: containerActionInputSchema,
+  output: actionResultSchema,
+  annotations: { readOnlyHint: false, idempotentHint: false },
+  _meta: { category: ToolCategories.CONTAINER },
+  requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
-
-    if (args.pruneTarget === "all") {
-      const targets = ["containers", "images", "volumes", "networks"] as const;
-      for (const target of targets) {
-        await wrapExecuteAndPoll(
-          `prune${target}`,
-          () => komodo.client.execute(PRUNE_ACTION_MAP[target] as "PruneContainers", { server: args.server }),
-          abortSignal,
-          reportProgress,
-        );
-      }
-      return text(
-        formatPruneResponse({
-          target: args.pruneTarget,
-          serverName: args.server,
-          output: "All resources pruned successfully",
-        }),
-      );
-    }
-
-    const action = PRUNE_ACTION_MAP[args.pruneTarget];
+    const apiAction = CONTAINER_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
-      "pruneResources",
-      () => komodo.client.execute(action as "PruneContainers", { server: args.server }),
+      `${args.action}Container`,
+      () => komodo.client.execute(apiAction, { server: args.server, container: args.container }),
       abortSignal,
       reportProgress,
     );
-    return text(
-      formatPruneResponse({
-        target: args.pruneTarget,
-        serverName: args.server,
-        output: `Result: ${update.success ? "✅ Success" : "❌ Failed"} | Status: ${update.status}`,
-      }),
-    );
-  },
-});
-
-// ============================================================================
-// Lifecycle (start, stop, restart, pause, unpause)
-// ============================================================================
-
-export const startContainerTool = defineTool({
-  name: "komodo_start_container",
-  description: "Start a stopped or paused container. The container must exist and be in a stopped or paused state.",
-  input: containerActionSchema,
-  annotations: { idempotentHint: true },
-  handler: async (args, { abortSignal, reportProgress }) => {
-    const komodo = requireClient();
-    const update = await wrapExecuteAndPoll(
-      "startContainer",
-      () => komodo.client.execute("StartContainer", { server: args.server, container: args.container }),
-      abortSignal,
-      reportProgress,
-    );
-    return text(formatUpdateResult(update, "start", "container", args.container, args.server));
-  },
-});
-
-export const stopContainerTool = defineTool({
-  name: "komodo_stop_container",
-  description: "Stop a running container gracefully. Sends SIGTERM first, then SIGKILL after timeout.",
-  input: containerActionSchema,
-  annotations: { idempotentHint: true },
-  handler: async (args, { abortSignal, reportProgress }) => {
-    const komodo = requireClient();
-    const update = await wrapExecuteAndPoll(
-      "stopContainer",
-      () => komodo.client.execute("StopContainer", { server: args.server, container: args.container }),
-      abortSignal,
-      reportProgress,
-    );
-    return text(formatUpdateResult(update, "stop", "container", args.container, args.server));
-  },
-});
-
-export const restartContainerTool = defineTool({
-  name: "komodo_restart_container",
-  description:
-    "Restart a container. Stops the container if running, then starts it again. Useful for applying configuration changes.",
-  input: containerActionSchema,
-  annotations: { idempotentHint: true },
-  handler: async (args, { abortSignal, reportProgress }) => {
-    const komodo = requireClient();
-    const update = await wrapExecuteAndPoll(
-      "restartContainer",
-      () => komodo.client.execute("RestartContainer", { server: args.server, container: args.container }),
-      abortSignal,
-      reportProgress,
-    );
-    return text(formatUpdateResult(update, "restart", "container", args.container, args.server));
-  },
-});
-
-export const pauseContainerTool = defineTool({
-  name: "komodo_pause_container",
-  description:
-    "Pause all processes in a running container using cgroups freezer. The container remains in memory but consumes no CPU cycles.",
-  input: containerActionSchema,
-  annotations: { idempotentHint: true },
-  handler: async (args, { abortSignal, reportProgress }) => {
-    const komodo = requireClient();
-    const update = await wrapExecuteAndPoll(
-      "pauseContainer",
-      () => komodo.client.execute("PauseContainer", { server: args.server, container: args.container }),
-      abortSignal,
-      reportProgress,
-    );
-    return text(formatUpdateResult(update, "pause", "container", args.container, args.server));
-  },
-});
-
-export const unpauseContainerTool = defineTool({
-  name: "komodo_unpause_container",
-  description: "Resume a paused container. All processes that were frozen will continue execution.",
-  input: containerActionSchema,
-  annotations: { idempotentHint: true },
-  handler: async (args, { abortSignal, reportProgress }) => {
-    const komodo = requireClient();
-    const update = await wrapExecuteAndPoll(
-      "unpauseContainer",
-      () => komodo.client.execute("UnpauseContainer", { server: args.server, container: args.container }),
-      abortSignal,
-      reportProgress,
-    );
-    return text(formatUpdateResult(update, "unpause", "container", args.container, args.server));
+    const payload = buildActionResult(update, args.action, "container", args.container, args.server);
+    return structured(payload, {
+      text: renderActionResult(payload, { updateId: extractUpdateId(update), logs: update.logs }),
+    });
   },
 });

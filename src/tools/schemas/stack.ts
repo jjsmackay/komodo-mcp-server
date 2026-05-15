@@ -9,15 +9,15 @@
 
 import { z } from "mcp-server-framework";
 import { Types } from "komodo_client";
-import { PARAM_DESCRIPTIONS, FIELD_DESCRIPTIONS } from "../../config/index.js";
-
-/** System command configuration for pre/post deploy hooks */
-const systemCommandSchema = z
-  .object({
-    path: z.string().optional().describe("Working directory for the command"),
-    command: z.string().optional().describe("The shell command to execute"),
-  })
-  .describe("System command configuration");
+import { PARAM_DESCRIPTIONS, FIELD_DESCRIPTIONS, CONFIG_DESCRIPTIONS } from "../../config/index.js";
+import { stackIdSchema, serverIdSchema, resourceNameSchema } from "./validators.js";
+import {
+  systemCommandSchema,
+  linkedRepoSchema,
+  webhookSchema,
+  resourceLinkSchema,
+  pageOutputSchema,
+} from "./shared.js";
 
 /** Additional config file dependency for the Stack */
 const stackConfigFileDependencySchema = z
@@ -48,18 +48,6 @@ export const stackConfigSchema = z
     auto_update_all_services: z.boolean().optional().describe("Redeploy entire stack on auto-update"),
     destroy_before_deploy: z.boolean().optional().describe('Run "docker compose down" before "up"'),
     skip_secret_interp: z.boolean().optional().describe("Skip secret interpolation into environment variables"),
-    linked_repo: z.string().optional().describe("Komodo Repo resource name/ID to source compose files from"),
-    git_provider: z.string().optional().describe('Git provider domain. Default: "github.com"'),
-    git_https: z.boolean().optional().describe("Use HTTPS for git clone. Default: true"),
-    git_account: z.string().optional().describe("Git account name for private repo access"),
-    repo: z.string().optional().describe("Repository path: {namespace}/{repo_name}"),
-    branch: z.string().optional().describe('Git branch to use. Default: "main"'),
-    commit: z.string().optional().describe("Specific commit hash to checkout"),
-    clone_path: z.string().optional().describe("Custom path for cloning the repository"),
-    reclone: z.boolean().optional().describe("Delete and reclone instead of git pull"),
-    webhook_enabled: z.boolean().optional().describe("Enable incoming webhooks to trigger deployments"),
-    webhook_secret: z.string().optional().describe("Custom webhook secret (empty = use default)"),
-    webhook_force_deploy: z.boolean().optional().describe("Force deploy on webhook"),
     files_on_host: z.boolean().optional().describe("Source compose files from host filesystem"),
     run_directory: z.string().optional().describe("Working directory for docker compose commands"),
     file_paths: z.array(z.string()).optional().describe('Compose file paths. Default: ["compose.yaml"]'),
@@ -100,9 +88,75 @@ export const stackConfigSchema = z
       .optional()
       .describe(`${FIELD_DESCRIPTIONS.ENVIRONMENT} Written to env_file_path before compose up.`),
   })
+  .merge(linkedRepoSchema)
+  .merge(webhookSchema)
   .describe("Stack configuration - only specify fields you want to set or update");
 
 /** Stack creation config — extends base with create-specific overrides */
 export const createStackConfigSchema = stackConfigSchema.extend({
   server_id: z.string().optional().describe(PARAM_DESCRIPTIONS.SERVER_ID_FOR_DEPLOY),
 });
+
+/** Stack lifecycle actions for the consolidated `komodo_stack_action` tool */
+export const stackActionEnum = z
+  .enum(["deploy", "pull", "start", "restart", "pause", "unpause", "stop", "destroy"])
+  .describe(
+    "Lifecycle action: deploy (compose up / re-deploy), pull (pull latest images), start (compose start), restart (stop+start), pause/unpause (freeze/resume processes), stop (compose stop), destroy (compose down — removes containers).",
+  );
+
+/** Input schema for the consolidated `komodo_stack_action` tool */
+export const stackActionInputSchema = z.object({
+  action: stackActionEnum,
+  stack: stackIdSchema.describe("Stack ID or name"),
+});
+
+/**
+ * Discriminated input for `komodo_stack_apply` (create-or-update).
+ *
+ * - `action: "create"` — register a new Stack (`name` required, `server_id` recommended)
+ * - `action: "update"` — PATCH-style update of an existing Stack (`stack` required)
+ */
+/**
+ * Input for `komodo_stack_apply` (create-or-update).
+ *
+ * Flat schema so MCP Inspector renders the form. The handler enforces
+ * `name` for create and `stack` for update at runtime.
+ */
+export const stackApplyInputSchema = z.object({
+  action: z.enum(["create", "update"]).describe("'create' to register a new stack, 'update' to PATCH an existing one"),
+  name: resourceNameSchema.optional().describe("Required when action='create' — unique name for the new stack"),
+  stack: stackIdSchema.optional().describe("Required when action='update' — existing stack id or name"),
+  server_id: serverIdSchema
+    .optional()
+    .describe("Convenience field for action='create' — target server (mirrors `config.server_id`)"),
+  config: stackConfigSchema.optional().describe(CONFIG_DESCRIPTIONS.STACK_CONFIG_PARTIAL),
+});
+
+// ============================================================================
+// Output Schemas
+// ============================================================================
+
+/** Compact summary of a single stack as returned in list/info responses. */
+export const stackSummarySchema = z.object({
+  id: z.string().describe("Stack ID"),
+  name: z.string().describe("Stack name"),
+  state: z.string().optional().describe("Aggregate compose state (running, partial, stopped, ...) when known"),
+  server_id: z.string().optional().describe("Target server ID"),
+});
+
+/** Output of `komodo_stack_list`. */
+export const stackListOutputSchema = z
+  .object({
+    items: z.array(stackSummarySchema).describe("Stacks visible to the caller"),
+    page: pageOutputSchema.optional(),
+  })
+  .describe("List of stacks");
+
+/** Output of `komodo_stack_info`. */
+export const stackInfoOutputSchema = z
+  .object({
+    summary: stackSummarySchema,
+    info: z.unknown().optional().describe("Full stack resource payload, when returned inline"),
+    resourceLink: resourceLinkSchema.optional(),
+  })
+  .describe("Detailed information about a stack");

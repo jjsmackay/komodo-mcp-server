@@ -8,9 +8,18 @@
  * @module tools/user
  */
 
-import { defineTool, text, z } from "mcp-server-framework";
+import { defineTool, structured } from "mcp-server-framework";
 import type { Types } from "komodo_client";
-import { requireClient, wrapApiCall } from "../utils/index.js";
+import { ToolCategories, ToolScopes } from "../config/index.js";
+import { requireClient, wrapApiCall, renderApiKeyList, renderApiKeyCreated, paginate } from "../utils/index.js";
+import {
+  listApiKeysOutputSchema,
+  createApiKeyOutputSchema,
+  createApiKeyInputSchema,
+  deleteApiKeyInputSchema,
+  deleteApiKeyOutputSchema,
+  paginationInputSchema,
+} from "./schemas/index.js";
 
 type ApiKey = Types.ApiKey;
 
@@ -19,29 +28,29 @@ type ApiKey = Types.ApiKey;
 // ============================================================================
 
 export const listApiKeysTool = defineTool({
-  name: "komodo_list_api_keys",
+  name: "komodo_user_list_api_keys",
   description:
     "List all API keys for the currently authenticated Komodo user. " +
     "Shows key name, key ID (not secret), creation date, and expiry.",
-  input: z.object({}),
+  input: paginationInputSchema,
+  output: listApiKeysOutputSchema,
   annotations: { readOnlyHint: true },
-  handler: async (_args, { abortSignal }) => {
+  _meta: { category: ToolCategories.USER },
+  requiredScopes: [ToolScopes.READ],
+  handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     const keys = await wrapApiCall("listApiKeys", () => komodo.client.read("ListApiKeys", {}), abortSignal);
 
-    if (!keys.length) {
-      return text("🔑 No API keys found for the current user.");
-    }
+    const allItems = keys.map((k: ApiKey) => ({
+      name: k.name,
+      key: k.key,
+      created_at: k.created_at,
+      expires: k.expires,
+    }));
 
-    const keyList = keys
-      .map((k: ApiKey) => {
-        const created = new Date(k.created_at).toISOString().split("T")[0];
-        const expires = k.expires === 0 ? "never" : new Date(k.expires).toISOString().split("T")[0];
-        return `• **${k.name}** — Key: \`${k.key}\` | Created: ${created} | Expires: ${expires}`;
-      })
-      .join("\n");
-
-    return text(`🔑 API keys (${keys.length}):\n\n${keyList}`);
+    const { items, page } = paginate(allItems, args.cursor, args.page_size);
+    const payload = { items: [...items], page };
+    return structured(payload, { text: renderApiKeyList(payload) });
   },
 });
 
@@ -50,26 +59,16 @@ export const listApiKeysTool = defineTool({
 // ============================================================================
 
 export const createApiKeyTool = defineTool({
-  name: "komodo_create_api_key",
+  name: "komodo_user_create_api_key",
   description:
     "Create a new API key for the currently authenticated Komodo user. " +
     "Returns the key and secret — the secret is shown only once and cannot be retrieved later. " +
     "Optionally set an expiry time.",
-  input: z.object({
-    name: z
-      .string()
-      .min(1, "API key name cannot be empty")
-      .max(100, "API key name is too long")
-      .describe("A descriptive name for the API key"),
-    expires_in_days: z
-      .number()
-      .int()
-      .min(0)
-      .max(3650)
-      .default(0)
-      .describe("Number of days until the key expires. 0 means no expiry. Default: 0"),
-  }),
+  input: createApiKeyInputSchema,
+  output: createApiKeyOutputSchema,
   annotations: { readOnlyHint: false },
+  _meta: { category: ToolCategories.USER },
+  requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
 
@@ -81,16 +80,13 @@ export const createApiKeyTool = defineTool({
       abortSignal,
     );
 
-    const expiryStr = args.expires_in_days > 0 ? `${args.expires_in_days} days` : "never";
-
-    return text(
-      `✅ API key created successfully!\n\n` +
-        `**Name:** ${args.name}\n` +
-        `**Key:** \`${result.key}\`\n` +
-        `**Secret:** \`${result.secret}\`\n` +
-        `**Expires:** ${expiryStr}\n\n` +
-        `⚠️ **Save the secret now!** It cannot be retrieved later.`,
-    );
+    const payload = {
+      name: args.name,
+      key: result.key,
+      secret: result.secret,
+      expires,
+    };
+    return structured(payload, { text: renderApiKeyCreated(payload) });
   },
 });
 
@@ -99,24 +95,25 @@ export const createApiKeyTool = defineTool({
 // ============================================================================
 
 export const deleteApiKeyTool = defineTool({
-  name: "komodo_delete_api_key",
+  name: "komodo_user_delete_api_key",
   description:
     "Delete an API key for the currently authenticated Komodo user. " +
-    "Requires the key ID (not the secret). Use komodo_list_api_keys to find key IDs.",
-  input: z.object({
-    key: z
-      .string()
-      .min(1, "API key cannot be empty")
-      .describe("The API key ID to delete (use komodo_list_api_keys to find it)"),
-  }),
+    "Requires the key ID (not the secret). Use komodo_user_list_api_keys to find key IDs.",
+  input: deleteApiKeyInputSchema,
+  output: deleteApiKeyOutputSchema,
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,
   },
+  _meta: { category: ToolCategories.USER },
+  requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await wrapApiCall("deleteApiKey", () => komodo.client.auth.manage("DeleteApiKey", { key: args.key }), abortSignal);
 
-    return text(`✅ API key deleted successfully.\n\n**Key:** \`${args.key}\``);
+    return structured(
+      { deleted: true, key: args.key },
+      { text: `✅ API key deleted successfully.\n\n**Key:** \`${args.key}\`` },
+    );
   },
 });

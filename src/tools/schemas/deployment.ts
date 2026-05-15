@@ -9,7 +9,14 @@
 
 import { z } from "mcp-server-framework";
 import { Types } from "komodo_client";
-import { PARAM_DESCRIPTIONS, FIELD_DESCRIPTIONS, RESTART_MODE_DESCRIPTIONS } from "../../config/index.js";
+import {
+  PARAM_DESCRIPTIONS,
+  FIELD_DESCRIPTIONS,
+  RESTART_MODE_DESCRIPTIONS,
+  CONFIG_DESCRIPTIONS,
+} from "../../config/index.js";
+import { deploymentIdSchema, serverIdSchema, resourceNameSchema } from "./validators.js";
+import { resourceLinkSchema, pageOutputSchema } from "./shared.js";
 
 /** Container restart policy */
 const restartModeSchema = z
@@ -92,3 +99,73 @@ export const deploymentConfigSchema = z
 export const createDeploymentConfigSchema = deploymentConfigSchema.extend({
   server_id: z.string().optional().describe(PARAM_DESCRIPTIONS.SERVER_ID_FOR_DEPLOY),
 });
+
+/** Deployment lifecycle actions for the consolidated `komodo_deployment_action` tool */
+export const deploymentActionEnum = z
+  .enum(["deploy", "pull", "start", "restart", "pause", "unpause", "stop", "destroy"])
+  .describe(
+    "Lifecycle action: deploy (create or re-deploy the container), pull (pull image without recreating), start (start a stopped container), restart (stop+start), pause/unpause (freeze/resume processes), stop (stop the container), destroy (remove the container).",
+  );
+
+/** Input schema for the consolidated `komodo_deployment_action` tool */
+export const deploymentActionInputSchema = z.object({
+  action: deploymentActionEnum,
+  deployment: deploymentIdSchema.describe("Deployment ID or name"),
+});
+
+/**
+ * Discriminated input for `komodo_deployment_apply` (create-or-update).
+ *
+ * - `action: "create"` — register a new Deployment (`name` required, `server_id` and `image` recommended)
+ * - `action: "update"` — PATCH-style update of an existing Deployment (`deployment` required)
+ */
+/**
+ * Input for `komodo_deployment_apply` (create-or-update).
+ *
+ * Flat schema so MCP Inspector renders the form. The handler enforces
+ * `name` for create and `deployment` for update at runtime.
+ */
+export const deploymentApplyInputSchema = z.object({
+  action: z
+    .enum(["create", "update"])
+    .describe("'create' to register a new deployment, 'update' to PATCH an existing one"),
+  name: resourceNameSchema.optional().describe("Required when action='create' — unique name for the new deployment"),
+  deployment: deploymentIdSchema.optional().describe("Required when action='update' — existing deployment id or name"),
+  server_id: serverIdSchema
+    .optional()
+    .describe("Convenience field for action='create' — target server (mirrors `config.server_id`)"),
+  image: DeploymentImageSchema.optional().describe(
+    "Convenience field for action='create' — Docker image to deploy (mirrors `config.image`)",
+  ),
+  config: deploymentConfigSchema.optional().describe(CONFIG_DESCRIPTIONS.DEPLOYMENT_CONFIG_PARTIAL),
+});
+
+// ============================================================================
+// Output Schemas
+// ============================================================================
+
+/** Compact summary of a single deployment as returned in list/info responses. */
+export const deploymentSummarySchema = z.object({
+  id: z.string().describe("Deployment ID"),
+  name: z.string().describe("Deployment name"),
+  state: z.string().optional().describe("Container state (running, exited, paused, ...) when known"),
+  image: z.string().optional().describe("Image reference currently configured"),
+  server_id: z.string().optional().describe("Target server ID"),
+});
+
+/** Output of `komodo_deployment_list`. */
+export const deploymentListOutputSchema = z
+  .object({
+    items: z.array(deploymentSummarySchema).describe("Deployments visible to the caller"),
+    page: pageOutputSchema.optional(),
+  })
+  .describe("List of deployments");
+
+/** Output of `komodo_deployment_info`. */
+export const deploymentInfoOutputSchema = z
+  .object({
+    summary: deploymentSummarySchema,
+    info: z.unknown().optional().describe("Full deployment resource payload, when returned inline"),
+    resourceLink: resourceLinkSchema.optional(),
+  })
+  .describe("Detailed information about a deployment");
