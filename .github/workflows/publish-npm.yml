@@ -43,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -72,6 +72,9 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Make CLI entry executable
+        run: chmod 755 build/index.js
+
       - name: Get package version
         id: version
         run: |
@@ -89,6 +92,13 @@ jobs:
             exit 1
           fi
           echo "✅ Main entry point exists"
+
+          if [ ! -x "build/index.js" ]; then
+            echo "❌ build/index.js is not executable"
+            ls -l build/index.js
+            exit 1
+          fi
+          echo "✅ Main entry point is executable"
           
           # Verify NO source maps in production build
           SOURCEMAPS=$(find build -name "*.js.map" | wc -l)
