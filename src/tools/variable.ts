@@ -39,6 +39,9 @@ import {
 
 type Variable = Types.Variable;
 
+/** Placeholder substituted for secret variable values in tool output. */
+const SECRET_PLACEHOLDER = "[redacted]";
+
 function projectVariable(v: Variable): {
   name: string;
   value: string;
@@ -47,7 +50,10 @@ function projectVariable(v: Variable): {
 } {
   return {
     name: v.name,
-    value: v.value ?? "",
+    // Never surface a secret's value: MCP results are persisted to the client
+    // transcript (and sent to the model provider), so redact regardless of the
+    // caller's Komodo scope — core only redacts for non-admin keys.
+    value: v.is_secret ? SECRET_PLACEHOLDER : (v.value ?? ""),
     ...(v.description !== undefined && v.description !== "" ? { description: v.description } : {}),
     ...(v.is_secret ? { is_secret: true } : {}),
   };
@@ -187,7 +193,10 @@ export const deleteVariableTool = defineTool({
       () => komodo.client.write("DeleteVariable", { name: args.name }),
       abortSignal,
     );
-    const built = buildDeleteResult("variable", args.name, result);
+    // The deleted-resource snapshot echoes the variable verbatim — redact a
+    // secret value before it reaches the client transcript.
+    const safe = result.is_secret ? { ...result, value: SECRET_PLACEHOLDER } : result;
+    const built = buildDeleteResult("variable", args.name, safe);
     return structured(built.payload, { text: built.text });
   },
 });
