@@ -47,6 +47,27 @@ import {
 type StackListItem = Types.StackListItem;
 
 // ============================================================================
+// Secret Redaction
+// ============================================================================
+
+/**
+ * Strip the post-interpolation deploy artifacts from a stack before returning it.
+ *
+ * `deployed_config` (the `docker compose config` output) and `deployed_contents`
+ * carry `[[variable.x]]` references already expanded to their real values, so a
+ * secret interpolated into a compose file or clone URL would otherwise surface
+ * in the tool result — and from there into the client transcript and model
+ * provider. The source config (`file_contents`, `environment`) is retained.
+ */
+function redactDeployedSecrets(stack: Types.Stack): Types.Stack {
+  if (!stack.info) return stack;
+  const info = { ...stack.info };
+  delete info.deployed_config;
+  delete info.deployed_contents;
+  return { ...stack, info };
+}
+
+// ============================================================================
 // List
 // ============================================================================
 
@@ -92,10 +113,8 @@ export const getStackInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
-    const result = await wrapApiCall(
-      "getStackInfo",
-      () => komodo.client.read("GetStack", { stack: args.stack }),
-      abortSignal,
+    const result = redactDeployedSecrets(
+      await wrapApiCall("getStackInfo", () => komodo.client.read("GetStack", { stack: args.stack }), abortSignal),
     );
     const link = tryRegisterResource({
       ctx: { sessionId },
@@ -141,7 +160,7 @@ export const applyStackTool = defineTool({
         () => komodo.client.write("CreateStack", { name, config: stackConfig }),
         abortSignal,
       );
-      const built = buildApplyResult("create", "stack", name, result);
+      const built = buildApplyResult("create", "stack", name, redactDeployedSecrets(result));
       return structured(built.payload, { text: built.text });
     }
     if (!args.stack) throw AppErrorFactory.validation.fieldRequired("stack");
@@ -156,7 +175,7 @@ export const applyStackTool = defineTool({
         }),
       abortSignal,
     );
-    const built = buildApplyResult("update", "stack", stackId, result);
+    const built = buildApplyResult("update", "stack", stackId, redactDeployedSecrets(result));
     return structured(built.payload, { text: built.text });
   },
 });
