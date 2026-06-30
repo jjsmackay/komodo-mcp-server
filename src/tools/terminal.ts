@@ -42,6 +42,27 @@ const ESTIMATED_TOTAL_LINES = Math.ceil(MAX_OUTPUT_LENGTH / 80);
 const EXIT_CODE_PREFIX = "__KOMODO_EXIT_CODE:";
 
 /**
+ * Build the terminal init shell with PTY input echo disabled.
+ *
+ * Komodo Periphery sends its command scaffold as a multi-line string to the
+ * PTY. Without `stty -echo`, the PTY echoes each scaffold line back into stdout
+ * and Periphery's sentinel-matching loop fires on the echo rather than on the
+ * real `printf` output — so the stream closes before the actual command output
+ * arrives, returning the echoed scaffold with no exit code. Disabling echo makes
+ * the sentinel match the real output. Used by every target so container,
+ * deployment and stack_service exec behave like the server terminal.
+ *
+ * Workaround until upstream fix: `\n` to `\\n` in the scaffold printf format
+ * literal, or a dedicated exec API without the scaffold.
+ */
+function echoSuppressedInit(shell: string): Types.InitTerminal {
+  return {
+    command: `sh -c 'stty -echo; exec ${shell}'`,
+    recreate: Types.TerminalRecreateMode.DifferentCommand,
+  };
+}
+
+/**
  * Parses and validates a raw exit-code value from the Komodo sentinel.
  *
  * The PTY echo can inject the printf format literal `"%d"` or other
@@ -230,17 +251,7 @@ export const execTool = defineTool({
               target: { type: "Server", params: { server } },
               terminal: args.terminal,
               command: args.command,
-              // Wrap the init shell with `stty -echo` to disable PTY input echo.
-              // Komodo Periphery sends its command scaffold as a multi-line string
-              // to the PTY. Without this, the PTY echoes each scaffold line back
-              // into stdout and the sentinel-matching loop in Periphery fires on
-              // the echo rather than on the real printf output — causing the stream
-              // to close before the actual command output arrives.
-              // Workaround until upstream fix: `\n` to `\\n` in the scaffold printf format literal, or a dedicated exec API without the scaffold.
-              init: {
-                command: `sh -c 'stty -echo; exec ${args.shell}'`,
-                recreate: Types.TerminalRecreateMode.DifferentCommand,
-              },
+              init: echoSuppressedInit(args.shell),
             }),
           abortSignal,
         );
@@ -266,12 +277,14 @@ export const execTool = defineTool({
           () =>
             collectCallbackOutput(
               (callbacks) =>
-                komodo.client.execute_container_exec(
+                komodo.client.execute_container_terminal(
                   {
                     server,
                     container,
-                    shell: args.shell,
                     command: args.command,
+                    // Suppress PTY echo so Periphery captures real stdout, not the
+                    // echoed scaffold (returns command echo + null exit otherwise).
+                    init: echoSuppressedInit(args.shell),
                   },
                   callbacks,
                 ),
@@ -300,11 +313,11 @@ export const execTool = defineTool({
           () =>
             collectCallbackOutput(
               (callbacks) =>
-                komodo.client.execute_deployment_exec(
+                komodo.client.execute_deployment_terminal(
                   {
                     deployment,
-                    shell: args.shell,
                     command: args.command,
+                    init: echoSuppressedInit(args.shell),
                   },
                   callbacks,
                 ),
@@ -334,12 +347,12 @@ export const execTool = defineTool({
           () =>
             collectCallbackOutput(
               (callbacks) =>
-                komodo.client.execute_stack_exec(
+                komodo.client.execute_stack_service_terminal(
                   {
                     stack,
                     service,
-                    shell: args.shell,
                     command: args.command,
+                    init: echoSuppressedInit(args.shell),
                   },
                   callbacks,
                 ),
