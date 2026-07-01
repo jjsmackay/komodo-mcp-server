@@ -34,9 +34,36 @@ test("false-positive gate: benign resource-config fields survive", () => {
   assert.equal(out.info.state, "running");
 });
 
-test("disabled switch passes input through unchanged", () => {
-  // Verified separately; scrubResource honours KOMODO_SECRET_SCRUB_ENABLED=false.
-  // (Env is default-on in the rig; this asserts identity when a plain object has no secrets.)
+test("false-positive gate: allowlisted public-key/flag fields survive, control field stays redacted", () => {
+  const input = {
+    config: {
+      webhook_secret: "shh",
+      secret_args: true,
+      skip_secret_interp: true,
+      auto_rotate_keys: false,
+    },
+    info: {
+      public_key: "ssh-ed25519 AAAA...",
+      attempted_public_key: "ssh-ed25519 BBBB...",
+    },
+  };
+  const out = scrubResource(input) as any;
+  // Allowlisted benign fields survive unredacted.
+  assert.equal(out.info.public_key, "ssh-ed25519 AAAA...");
+  assert.equal(out.info.attempted_public_key, "ssh-ed25519 BBBB...");
+  assert.equal(out.config.skip_secret_interp, true);
+  assert.equal(out.config.auto_rotate_keys, false);
+  // Control: fields NOT on the allowlist stay redacted.
+  assert.notEqual(out.config.webhook_secret, "shh");
+  assert.notEqual(out.config.secret_args, true);
+});
+
+test("passes input through unchanged when a plain object has no secrets (enable-gate itself verified by inspection)", () => {
+  // This does NOT exercise KOMODO_SECRET_SCRUB_ENABLED=false — `config` is a frozen
+  // singleton parsed at module load, so toggling it here would need a brittle
+  // env-reload harness. The gate at scrubResource's `if (!config.KOMODO_SECRET_SCRUB_ENABLED)
+  // return result;` is verified by inspection instead. This test only asserts that
+  // scrubbing a secret-free object is a no-op.
   const input = { a: 1, b: "hello" };
   assert.deepEqual(scrubResource(input), input);
 });
@@ -46,6 +73,13 @@ test("redactAlerterEndpoint masks endpoint url and email", () => {
     config: { endpoint: { type: "Slack", params: { url: "https://hooks.slack.com/services/T/B/xyz" } } },
   } as any);
   assert.notEqual(out.config.endpoint.params.url, "https://hooks.slack.com/services/T/B/xyz");
+});
+
+test("redactAlerterEndpoint masks email on an Ntfy endpoint", () => {
+  const out: any = redactAlerterEndpoint({
+    config: { endpoint: { type: "Ntfy", params: { url: "https://ntfy.sh/x", email: "a@b.com" } } },
+  } as any);
+  assert.notEqual(out.config.endpoint.params.email, "a@b.com");
 });
 
 test("redactAlerterEndpoint passes an alerter with no endpoint through", () => {
