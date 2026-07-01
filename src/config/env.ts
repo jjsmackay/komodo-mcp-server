@@ -59,6 +59,18 @@ export const appEnvSchema = z.object({
 
   /** Maximum number of dynamic resource entries kept in memory. Default: 1000 */
   KOMODO_RESOURCE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
+
+  /** Master switch for secret redaction of tool output. Default: true. */
+  KOMODO_SECRET_SCRUB_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+
+  /** Comma-separated extra key-name fragments always redacted (case-insensitive). */
+  KOMODO_SECRET_SCRUB_KEYS: z
+    .string()
+    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean))
+    .optional(),
 });
 
 export type AppEnvConfig = z.infer<typeof appEnvSchema>;
