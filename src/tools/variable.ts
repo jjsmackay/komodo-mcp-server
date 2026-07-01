@@ -59,6 +59,15 @@ function projectVariable(v: Variable): {
   };
 }
 
+/**
+ * Mask a secret variable's value in the full resource returned by the write and
+ * delete tools — unlike reads, write responses echo the plaintext value even for
+ * `is_secret` variables. Passes non-secrets (and `undefined`) through.
+ */
+function maskSecretValue(v: Variable | undefined): Variable | undefined {
+  return v?.is_secret ? { ...v, value: SECRET_PLACEHOLDER } : v;
+}
+
 // ============================================================================
 // List
 // ============================================================================
@@ -138,7 +147,7 @@ export const applyVariableTool = defineTool({
         () => komodo.client.write("CreateVariable", params),
         abortSignal,
       );
-      const built = buildApplyResult("create", "variable", args.name, result);
+      const built = buildApplyResult("create", "variable", args.name, maskSecretValue(result));
       return structured(built.payload, { text: built.text });
     }
     // update — dispatch to one or more endpoints based on which fields are set
@@ -170,7 +179,7 @@ export const applyVariableTool = defineTool({
         abortSignal,
       );
     }
-    const built = buildApplyResult("update", "variable", args.name, updated);
+    const built = buildApplyResult("update", "variable", args.name, maskSecretValue(updated));
     return structured(built.payload, { text: built.text });
   },
 });
@@ -195,8 +204,7 @@ export const deleteVariableTool = defineTool({
     );
     // The deleted-resource snapshot echoes the variable verbatim — redact a
     // secret value before it reaches the client transcript.
-    const safe = result.is_secret ? { ...result, value: SECRET_PLACEHOLDER } : result;
-    const built = buildDeleteResult("variable", args.name, safe);
+    const built = buildDeleteResult("variable", args.name, maskSecretValue(result));
     return structured(built.payload, { text: built.text });
   },
 });
