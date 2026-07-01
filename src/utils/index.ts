@@ -15,6 +15,9 @@
 // --- API Helpers ---
 export { requireClient, checkCancelled, wrapApiCall } from "./api-helpers.js";
 
+// --- Secret Redaction ---
+export { scrubResource } from "./redact.js";
+
 // --- Resource Links (ephemeral session-bound payloads) ---
 export { tryRegisterResource } from "./resource-link.js";
 export type { ResourceCategory, ResourceLinkContext, RegisterResourceOptions } from "./resource-link.js";
