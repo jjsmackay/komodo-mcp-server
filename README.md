@@ -36,7 +36,7 @@ Komodo MCP Server enables seamless interaction between AI assistants (like Claud
 
 - **Three Auth Methods** — API Key/Secret (recommended), username/password, or JWT token. All support Docker secrets via `*_FILE` variants.
 - **Runtime Configuration** — Set or change credentials dynamically via `komodo_configure` without restarting the server.
-- **Hardened by Default** — Input validation (Zod), secret scrubbing in logs, rate limiting, DNS rebinding protection, and security headers via Helmet.
+- **Hardened by Default** — Input validation (Zod), best-effort secret scrubbing in operational logs and tool output, rate limiting, DNS rebinding protection, and security headers via Helmet. Retrieved container/build logs and `komodo_exec` output are not scrubbed — see [Secret Redaction](config/README.md#secret-redaction).
 
 ### ⚡ Reliability & Operations
 
