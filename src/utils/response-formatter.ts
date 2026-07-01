@@ -9,6 +9,7 @@
  */
 
 import { RESPONSE_ICONS } from "../config/index.js";
+import { scrubResource } from "./redact.js";
 
 export type ActionType =
   | "deploy"
@@ -116,8 +117,9 @@ export function buildApplyResult(
   };
   text: string;
 } {
+  const scrubbed = scrubResource(result);
   const header = formatActionResponse({ action, resourceType, resourceId });
-  const resource = result && typeof result === "object" ? (result as Record<string, unknown>) : undefined;
+  const resource = scrubbed && typeof scrubbed === "object" ? (scrubbed as Record<string, unknown>) : undefined;
   return {
     payload: {
       action,
@@ -125,7 +127,7 @@ export function buildApplyResult(
       resource_id: resourceId,
       ...(resource ? { resource } : {}),
     },
-    text: `${header}\n\n${JSON.stringify(result, null, 2)}`,
+    text: `${header}\n\n${JSON.stringify(scrubbed, null, 2)}`,
   };
 }
 
@@ -142,8 +144,9 @@ export function buildDeleteResult(
   payload: { action: "remove"; resource_type: string; resource_id: string; resource?: Record<string, unknown> };
   text: string;
 } {
+  const scrubbed = scrubResource(result);
   const header = formatActionResponse({ action: "remove", resourceType, resourceId });
-  const resource = result && typeof result === "object" ? (result as Record<string, unknown>) : undefined;
+  const resource = scrubbed && typeof scrubbed === "object" ? (scrubbed as Record<string, unknown>) : undefined;
   return {
     payload: {
       action: "remove",
@@ -151,6 +154,6 @@ export function buildDeleteResult(
       resource_id: resourceId,
       ...(resource ? { resource } : {}),
     },
-    text: `${header}\n\n${JSON.stringify(result, null, 2)}`,
+    text: `${header}\n\n${JSON.stringify(scrubbed, null, 2)}`,
   };
 }
