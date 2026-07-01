@@ -27,9 +27,9 @@ import {
   renderRepoList,
   renderRepoInfo,
   renderActionResult,
-  tryRegisterResource,
   buildApplyResult,
   buildDeleteResult,
+  buildInfoResult,
 } from "../utils/index.js";
 import {
   repoIdSchema,
@@ -103,16 +103,6 @@ export const getRepoInfoTool = defineTool({
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
     const result = await wrapApiCall("getRepo", () => komodo.client.read("GetRepo", { repo: args.repo }), abortSignal);
-    const link = tryRegisterResource({
-      ctx: { sessionId },
-      category: "info",
-      name: `${result.name} (repo info)`,
-      mimeType: "application/json",
-      content: JSON.stringify(result, null, 2),
-      ttlMs: config.KOMODO_RESOURCE_TTL_INFO,
-      inlineFull: args.inline_full,
-      description: `Full repo resource for ${result.name}`,
-    });
     const summary = {
       id: result._id?.$oid ?? args.repo,
       name: result.name,
@@ -121,10 +111,17 @@ export const getRepoInfoTool = defineTool({
       ...(result.config?.repo ? { repo: result.config.repo } : {}),
       ...(result.config?.branch ? { branch: result.config.branch } : {}),
     };
-    const payload = link ? { summary, resourceLink: link } : { summary, info: result };
-    return structured(payload, {
-      text: renderRepoInfo(payload),
-      ...(link ? { links: [link] } : {}),
+    return buildInfoResult({
+      result,
+      summary,
+      register: {
+        ctx: { sessionId },
+        name: `${result.name} (repo info)`,
+        ttlMs: config.KOMODO_RESOURCE_TTL_INFO,
+        inlineFull: args.inline_full,
+        description: `Full repo resource for ${result.name}`,
+      },
+      render: (payload) => renderRepoInfo(payload),
     });
   },
 });

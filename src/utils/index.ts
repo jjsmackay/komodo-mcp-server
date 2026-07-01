@@ -35,6 +35,7 @@ export {
   formatActionResponse,
   buildApplyResult,
   buildDeleteResult,
+  buildInfoResult,
   type ActionType,
   type ResourceType,
   type ActionResponseOptions,
