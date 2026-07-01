@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scrubResource } from "./redact.js";
+import { scrubResource, redactAlerterEndpoint } from "./redact.js";
 
 test("scrubs a sensitively-named field (webhook_secret)", () => {
   const out = scrubResource({ config: { webhook_secret: "shhh-123" } }) as any;
@@ -39,4 +39,16 @@ test("disabled switch passes input through unchanged", () => {
   // (Env is default-on in the rig; this asserts identity when a plain object has no secrets.)
   const input = { a: 1, b: "hello" };
   assert.deepEqual(scrubResource(input), input);
+});
+
+test("redactAlerterEndpoint masks endpoint url and email", () => {
+  const out: any = redactAlerterEndpoint({
+    config: { endpoint: { type: "Slack", params: { url: "https://hooks.slack.com/services/T/B/xyz" } } },
+  } as any);
+  assert.notEqual(out.config.endpoint.params.url, "https://hooks.slack.com/services/T/B/xyz");
+});
+
+test("redactAlerterEndpoint passes an alerter with no endpoint through", () => {
+  const a: any = { config: {} };
+  assert.deepEqual(redactAlerterEndpoint(a), a);
 });

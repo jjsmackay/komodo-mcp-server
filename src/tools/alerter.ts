@@ -25,6 +25,7 @@ import {
   buildApplyResult,
   buildDeleteResult,
   buildInfoResult,
+  redactAlerterEndpoint,
 } from "../utils/index.js";
 import {
   alerterIdSchema,
@@ -100,7 +101,7 @@ export const getAlerterInfoTool = defineTool({
       ...(result.config?.endpoint?.type ? { endpoint_type: result.config.endpoint.type } : {}),
     };
     return buildInfoResult({
-      result,
+      result: redactAlerterEndpoint(result),
       summary,
       register: {
         ctx: { sessionId },
@@ -145,7 +146,7 @@ export const applyAlerterTool = defineTool({
           }),
         abortSignal,
       );
-      const built = buildApplyResult("create", "alerter", name, result);
+      const built = buildApplyResult("create", "alerter", name, redactAlerterEndpoint(result));
       return structured(built.payload, { text: built.text });
     }
     if (!args.alerter) throw AppErrorFactory.validation.fieldRequired("alerter");
@@ -160,7 +161,7 @@ export const applyAlerterTool = defineTool({
         }),
       abortSignal,
     );
-    const built = buildApplyResult("update", "alerter", alerterId, result);
+    const built = buildApplyResult("update", "alerter", alerterId, redactAlerterEndpoint(result));
     return structured(built.payload, { text: built.text });
   },
 });
@@ -182,7 +183,7 @@ export const deleteAlerterTool = defineTool({
       () => komodo.client.write("DeleteAlerter", { id: args.alerter }),
       abortSignal,
     );
-    const built = buildDeleteResult("alerter", args.alerter, result);
+    const built = buildDeleteResult("alerter", args.alerter, redactAlerterEndpoint(result));
     return structured(built.payload, { text: built.text });
   },
 });
