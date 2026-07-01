@@ -21,10 +21,40 @@ function getScrubber(): SecretScrubber {
   return scrubber;
 }
 
+/**
+ * Key names that `SecretScrubber` over-redacts via bare-substring matching
+ * (`isSensitiveKey`) but which are never actually secret. Restored to their
+ * original value after scrubbing. `SecretScrubber` has no blocklist hook, so
+ * this is a post-pass rather than an input to the scrubber itself.
+ */
+const REDACT_ALLOWLIST = new Set([
+  "public_key",
+  "attempted_public_key",
+  "periphery_public_key",
+  "skip_secret_interp",
+  "auto_rotate_keys",
+]);
+
+/** Walk `scrubbed` and `original` in parallel, restoring allowlisted keys' original values. */
+function restoreAllowlisted(scrubbed: unknown, original: unknown): unknown {
+  if (Array.isArray(scrubbed) && Array.isArray(original)) {
+    return scrubbed.map((v, i) => restoreAllowlisted(v, original[i]));
+  }
+  if (scrubbed && typeof scrubbed === "object" && original && typeof original === "object") {
+    const out: Record<string, unknown> = { ...(scrubbed as Record<string, unknown>) };
+    const orig = original as Record<string, unknown>;
+    for (const k of Object.keys(out)) {
+      out[k] = REDACT_ALLOWLIST.has(k) ? orig[k] : restoreAllowlisted(out[k], orig[k]);
+    }
+    return out;
+  }
+  return scrubbed;
+}
+
 /** Scrub secrets from a tool result before it reaches the client transcript. */
 export function scrubResource(result: unknown): unknown {
   if (!config.KOMODO_SECRET_SCRUB_ENABLED) return result;
-  return getScrubber().scrubObject(result);
+  return restoreAllowlisted(getScrubber().scrubObject(result), result);
 }
 
 /**
