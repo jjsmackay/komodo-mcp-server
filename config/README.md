@@ -184,6 +184,19 @@ Required when `MCP_TRANSPORT=https`:
 | `MCP_TLS_KEY_PATH` | `transport.tls.key_path` | — | TLS private key file (PEM) |
 | `MCP_TLS_CA_PATH` | `transport.tls.ca_path` | — | CA certificate (optional, for custom CA/mTLS) |
 
+## Secret Redaction
+
+The server scrubs likely secrets out of tool output before it reaches the client transcript. This is a **best-effort, defence-in-depth** measure — key-name and value-shape heuristics, not a guarantee.
+
+| Variable | Config Key | Default | Description |
+|----------|-----------|---------|-------------|
+| `KOMODO_SECRET_SCRUB_ENABLED` | — | `true` | Master switch for secret scrubbing of tool output |
+| `KOMODO_SECRET_SCRUB_KEYS` | — | — | Comma-separated extra key-name fragments to always redact (case-insensitive) |
+
+**Coverage:** structured resource config returned by `*_apply`, `*_delete`, and `*_info` tools — env var blocks, `webhook_secret`, `passkey`, and alerter webhook URLs/emails — via key-name and value-shape heuristics.
+
+**Not covered:** `komodo_exec` output, or logs retrieved via `komodo_container_logs` / `komodo_container_search_logs` / `komodo_build_logs`. Command output and log content are not scanned — don't rely on this feature to keep secrets out of retrieved logs.
+
 ## Security
 
 | Variable | Config Key | Default | Description |
