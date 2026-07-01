@@ -16,7 +16,7 @@
 export { requireClient, checkCancelled, wrapApiCall } from "./api-helpers.js";
 
 // --- Secret Redaction ---
-export { scrubResource } from "./redact.js";
+export { scrubResource, redactAlerterEndpoint, REDACTED } from "./redact.js";
 
 // --- Resource Links (ephemeral session-bound payloads) ---
 export { tryRegisterResource } from "./resource-link.js";
