@@ -69,7 +69,12 @@ export const appEnvSchema = z.object({
   /** Comma-separated extra key-name fragments always redacted (case-insensitive). */
   KOMODO_SECRET_SCRUB_KEYS: z
     .string()
-    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean))
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    )
     .optional(),
 });
 
