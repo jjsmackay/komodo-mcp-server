@@ -154,6 +154,31 @@ secrets:
 
 > **Note:** Docker secret `*_FILE` variables are only supported as environment variables, not in config files.
 
+### Secret Redaction
+
+Responses from `komodo_deployment_info` and `komodo_container_inspect` are
+scrubbed of secret-looking environment values before they reach the MCP client,
+so secrets are less likely to end up in an assistant's context.
+
+| Variable | Config Key | Default | Description |
+|----------|-----------|---------|-------------|
+| `KOMODO_SECRET_SCRUB_ENABLED` | — | `true` | Master switch for redaction |
+| `KOMODO_SECRET_SCRUB_KEYWORDS` | — | (built-in list) | Override keyword tokens (comma-separated) |
+| `KOMODO_SECRET_SCRUB_KEYS` | — | — | Explicit key names always redacted |
+
+**Detection is two-pronged and best-effort:**
+
+- **Key-name:** an env key whose `_`-delimited tokens include a keyword
+  (default `KEY, SECRET, PASS, PASSWORD, PWD, TOKEN, CREDENTIAL, CREDENTIALS,
+  AUTH, PRIVATE`) or which is on `KOMODO_SECRET_SCRUB_KEYS`.
+- **Value-shape:** a value that looks like a credential regardless of key —
+  a URL with embedded `user:pass@`, a JWT, or a PEM private-key block.
+
+> **This is a heuristic, not a guarantee.** A secret with an innocuous key name
+> and an unremarkable value can still slip through. Add such keys to
+> `KOMODO_SECRET_SCRUB_KEYS`. Redaction does not cover `komodo_exec` output or
+> container logs.
+
 ## Transport & Network
 
 Controls how the MCP server communicates with clients.

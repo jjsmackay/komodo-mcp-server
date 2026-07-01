@@ -38,6 +38,8 @@ import {
   renderContainerSearchLogs,
   renderActionResult,
   tryRegisterResource,
+  getRedactOptions,
+  redactEnvList,
 } from "../utils/index.js";
 import {
   containerActionInputSchema,
@@ -99,7 +101,8 @@ export const listContainersTool = defineTool({
 export const inspectContainerTool = defineTool({
   name: "komodo_container_inspect",
   description:
-    "Get detailed low-level information about a container. Returns Docker inspect data including configuration, state, network settings, mounts, and process info.",
+    "Get detailed low-level information about a container. Returns Docker inspect data including configuration, state, network settings, mounts, and process info. " +
+    "Secret-looking environment values are redacted (best-effort); disable with KOMODO_SECRET_SCRUB_ENABLED=false.",
   input: z
     .object({
       server: serverIdSchema.describe(PARAM_DESCRIPTIONS.SERVER_ID_WHERE_CONTAINER_RUNS),
@@ -117,6 +120,12 @@ export const inspectContainerTool = defineTool({
       () => komodo.client.read("InspectDockerContainer", { server: args.server, container: args.container }),
       abortSignal,
     );
+    // Docker inspect resolves [[variable]] references into plaintext env, so
+    // even correctly-configured Komodo Variables surface here — redact them.
+    const redactOpts = getRedactOptions();
+    if (result.Config?.Env) {
+      result.Config.Env = redactEnvList(result.Config.Env, redactOpts);
+    }
     const link = tryRegisterResource({
       ctx: { sessionId },
       category: "inspect",

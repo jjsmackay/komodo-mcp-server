@@ -15,6 +15,7 @@
     "start": "node build/index.js",
     "dev": "npm run build && node build/index.js",
     "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \"build-test/**/*.test.js\"",
     "clean": "rm -rf build coverage test-results *.tsbuildinfo",
     "clean:all": "rm -rf build node_modules coverage test-results *.tsbuildinfo",
     "lint": "eslint 'src/**/*.ts'",

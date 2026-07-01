@@ -30,6 +30,8 @@ import {
   tryRegisterResource,
   buildApplyResult,
   buildDeleteResult,
+  getRedactOptions,
+  redactEnvBlock,
 } from "../utils/index.js";
 import {
   deploymentApplyInputSchema,
@@ -86,7 +88,8 @@ export const listDeploymentsTool = defineTool({
 export const getDeploymentInfoTool = defineTool({
   name: "komodo_deployment_info",
   description:
-    "Get detailed information about a Komodo-managed deployment, including its configuration, current state, and assigned server.",
+    "Get detailed information about a Komodo-managed deployment, including its configuration, current state, and assigned server. " +
+    "Secret-looking environment values are redacted (best-effort); disable with KOMODO_SECRET_SCRUB_ENABLED=false.",
   input: z
     .object({
       deployment: deploymentIdSchema.describe(PARAM_DESCRIPTIONS.DEPLOYMENT_ID_FOR_INFO),
@@ -103,6 +106,12 @@ export const getDeploymentInfoTool = defineTool({
       () => komodo.client.read("GetDeployment", { deployment: args.deployment }),
       abortSignal,
     );
+    // Redact secret env values before the result is stringified into a resource
+    // or placed in the payload (closes the resource-offload leak path).
+    const redactOpts = getRedactOptions();
+    if (result.config?.environment) {
+      result.config.environment = redactEnvBlock(result.config.environment, redactOpts);
+    }
     const link = tryRegisterResource({
       ctx: { sessionId },
       category: "info",

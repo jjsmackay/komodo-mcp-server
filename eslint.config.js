@@ -7,9 +7,12 @@ import eslintPluginPrettier from "eslint-plugin-prettier/recommended";
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-  // Global ignores
+  // Global ignores. Test files are excluded from the base tsconfig project and
+  // use node:test patterns (bare `test(...)` calls) that the strict
+  // type-checked ruleset flags as floating promises — they are not part of the
+  // shipped build, so keep them out of lint.
   {
-    ignores: ["build/**", "node_modules/**", "**/*.js", "!eslint.config.js"],
+    ignores: ["build/**", "build-test/**", "node_modules/**", "**/*.js", "**/*.test.ts", "!eslint.config.js"],
   },
 
   // Base ESLint recommended rules

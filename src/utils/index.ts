@@ -15,6 +15,16 @@
 // --- API Helpers ---
 export { requireClient, checkCancelled, wrapApiCall } from "./api-helpers.js";
 
+// --- Secret Redaction (best-effort scrubbing of API responses) ---
+export {
+  REDACTED,
+  DEFAULT_SECRET_KEYWORDS,
+  getRedactOptions,
+  redactEnvBlock,
+  redactEnvList,
+  type RedactOptions,
+} from "./redact.js";
+
 // --- Resource Links (ephemeral session-bound payloads) ---
 export { tryRegisterResource } from "./resource-link.js";
 export type { ResourceCategory, ResourceLinkContext, RegisterResourceOptions } from "./resource-link.js";
