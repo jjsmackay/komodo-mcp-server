@@ -198,7 +198,9 @@ export const deleteStackTool = defineTool({
       () => komodo.client.write("DeleteStack", { id: args.stack }),
       abortSignal,
     );
-    const built = buildDeleteResult("stack", args.stack, result);
+    // The deleted-resource snapshot carries the post-interpolation
+    // deployed_config/deployed_contents — strip them before the transcript.
+    const built = buildDeleteResult("stack", args.stack, redactDeployedSecrets(result));
     return structured(built.payload, { text: built.text });
   },
 });
