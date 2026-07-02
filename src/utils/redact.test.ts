@@ -36,6 +36,7 @@ test("false-positive gate: benign resource-config fields survive", () => {
 
 test("false-positive gate: allowlisted public-key/flag fields survive, control field stays redacted", () => {
   const input = {
+    is_secret: true,
     config: {
       webhook_secret: "shh",
       secret_args: true,
@@ -49,6 +50,7 @@ test("false-positive gate: allowlisted public-key/flag fields survive, control f
   };
   const out = scrubResource(input) as any;
   // Allowlisted benign fields survive unredacted.
+  assert.equal(out.is_secret, true);
   assert.equal(out.info.public_key, "ssh-ed25519 AAAA...");
   assert.equal(out.info.attempted_public_key, "ssh-ed25519 BBBB...");
   assert.equal(out.config.skip_secret_interp, true);
