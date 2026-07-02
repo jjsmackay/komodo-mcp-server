@@ -11,7 +11,12 @@ import { SecretScrubber } from "mcp-server-framework/logger";
 import type { Types } from "komodo_client";
 import { config } from "../config/index.js";
 
-export const REDACTED = "[redacted]";
+/**
+ * Redaction marker. Matches the framework `SecretScrubber`'s internal
+ * `REDACTED_VALUE` (not exported) so our own masking (variable value, alerter
+ * URL) and the scrubber's output present one consistent marker in tool results.
+ */
+export const REDACTED = "**********";
 
 let scrubber: SecretScrubber | undefined;
 function getScrubber(): SecretScrubber {
@@ -33,6 +38,7 @@ const REDACT_ALLOWLIST = new Set([
   "periphery_public_key",
   "skip_secret_interp",
   "auto_rotate_keys",
+  "is_secret",
 ]);
 
 /** Walk `scrubbed` and `original` in parallel, restoring allowlisted keys' original values. */

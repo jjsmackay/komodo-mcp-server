@@ -26,6 +26,7 @@ import {
   renderVariableInfo,
   buildApplyResult,
   buildDeleteResult,
+  REDACTED,
 } from "../utils/index.js";
 import {
   variableNameSchema,
@@ -39,9 +40,6 @@ import {
 
 type Variable = Types.Variable;
 
-/** Placeholder substituted for secret variable values in tool output. */
-const SECRET_PLACEHOLDER = "[redacted]";
-
 function projectVariable(v: Variable): {
   name: string;
   value: string;
@@ -53,7 +51,7 @@ function projectVariable(v: Variable): {
     // Never surface a secret's value: MCP results are persisted to the client
     // transcript (and sent to the model provider), so redact regardless of the
     // caller's Komodo scope — core only redacts for non-admin keys.
-    value: v.is_secret ? SECRET_PLACEHOLDER : (v.value ?? ""),
+    value: v.is_secret ? REDACTED : (v.value ?? ""),
     ...(v.description !== undefined && v.description !== "" ? { description: v.description } : {}),
     ...(v.is_secret ? { is_secret: true } : {}),
   };
@@ -65,7 +63,7 @@ function projectVariable(v: Variable): {
  * `is_secret` variables. Passes non-secrets (and `undefined`) through.
  */
 function maskSecretValue(v: Variable | undefined): Variable | undefined {
-  return v?.is_secret ? { ...v, value: SECRET_PLACEHOLDER } : v;
+  return v?.is_secret ? { ...v, value: REDACTED } : v;
 }
 
 // ============================================================================
