@@ -38,6 +38,7 @@ import {
   renderContainerSearchLogs,
   renderActionResult,
   tryRegisterResource,
+  scrubResource,
 } from "../utils/index.js";
 import {
   containerActionInputSchema,
@@ -112,11 +113,15 @@ export const inspectContainerTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
-    const result = await wrapApiCall(
+    const raw = await wrapApiCall(
       "inspectContainer",
       () => komodo.client.read("InspectDockerContainer", { server: args.server, container: args.container }),
       abortSignal,
     );
+    // Config.Env is the resolved runtime environment, so a secret stored as a
+    // Komodo Variable surfaces here as plaintext — scrub before it reaches the
+    // transcript. scrubResource redacts secret KEY=value entries in the Env array.
+    const result = scrubResource(raw) as typeof raw;
     const link = tryRegisterResource({
       ctx: { sessionId },
       category: "inspect",
