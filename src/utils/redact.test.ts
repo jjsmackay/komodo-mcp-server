@@ -88,3 +88,12 @@ test("redactAlerterEndpoint passes an alerter with no endpoint through", () => {
   const a: any = { config: {} };
   assert.deepEqual(redactAlerterEndpoint(a), a);
 });
+
+test("scrubs secret KEY=value entries in a Config.Env-style array (container inspect)", () => {
+  const out: any = scrubResource({
+    Config: { Env: ["HOST=localhost", "API_KEY=abc123", "DB_PASSWORD=hunter2"] },
+  });
+  const env = out.Config.Env.join("\n");
+  assert.doesNotMatch(env, /abc123|hunter2/);
+  assert.match(env, /HOST=localhost/);
+});
