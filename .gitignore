@@ -17,6 +17,8 @@ dist/
 .env.test.local
 .env.production.local
 
+/config.toml
+
 # Operating System Files
 .DS_Store
 .DS_Store?
