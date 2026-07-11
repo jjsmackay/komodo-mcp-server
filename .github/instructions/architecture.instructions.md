@@ -29,7 +29,7 @@ src/
 │   └── extraction.ts     # Error parsing from komodo_client responses
 ├── tools/
 │   ├── index.ts          # Side-effect imports (auto-registration)
-│   ├── config.ts         # komodo_configure, komodo_health_check
+│   ├── config.ts         # komodo_health_check
 │   ├── container.ts      # Container operations (list, inspect, start, stop, ...)
 │   ├── server.ts         # Server operations (list, stats, create, ...)
 │   ├── stack.ts          # Stack lifecycle (list, deploy, start, stop, ...)

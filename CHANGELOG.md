@@ -51,11 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **`komodo_configure` tool**: The global Komodo connection can no longer be set or changed at
-  runtime via a tool call — it wasn't compatible with the new per-user connection model (a
-  connection is resolved per request from the auth context; there is no longer a single mutable
-  global client to repoint at runtime). Going forward the global connection comes only from
-  startup config (`[komodo]` in `config.toml` / `KOMODO_*` env vars, stdio or auth-disabled HTTP
-  mode) or from each user's own login — never from an in-chat tool.
+  runtime via a tool call. Going forward it comes only from startup config (`[komodo]` in
+  `config.toml` / `KOMODO_*` env vars, stdio or auth-disabled HTTP mode) or from each user's own
+  login — never from an in-chat tool. This closes the gap where the tool's runtime reconfiguration
+  wasn't covered by the startup-time "insecure global login" security warning, by removing the
+  reconfiguration path entirely rather than adding a second warning call site.
   `komodo_health_check` is unaffected and remains the way to check connection status.
 - **Dead auth scaffolding** left over from an earlier browser-client design: the self-signed
   `jwt-token-exchange` MCP bearer module, the unused `session-auth` bridge, the legacy
