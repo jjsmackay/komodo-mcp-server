@@ -19,6 +19,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -106,6 +107,7 @@ export const getResourceSyncInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "ResourceSync", id: args.resource_sync }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getResourceSync",
       () => komodo.client.read("GetResourceSync", { sync: args.resource_sync }),
@@ -148,7 +150,13 @@ export const resourceSyncActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "ResourceSync", id: args.resource_sync }, Types.PermissionLevel.Execute);
     if (args.action === "run") {
+      // Note: 'run' applies the sync's pending diff, which can create/update/delete arbitrary
+      // other Komodo resources (stacks, deployments, builds, ...) described in the synced
+      // files. This check gates only the ResourceSync resource itself — it does not verify
+      // Write on every resource the sync will touch; Komodo's own backend is the authority
+      // for those individual writes.
       const update = await wrapExecuteAndPoll(
         `run resource sync '${args.resource_sync}'`,
         () => komodo.client.execute("RunSync", { sync: args.resource_sync }),
@@ -235,6 +243,7 @@ export const deleteResourceSyncTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "ResourceSync", id: args.resource_sync }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteResourceSync",
       () => komodo.client.write("DeleteResourceSync", { id: args.resource_sync }),

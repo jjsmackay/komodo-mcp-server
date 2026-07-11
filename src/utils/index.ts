@@ -13,7 +13,7 @@
  */
 
 // --- API Helpers ---
-export { requireClient, checkCancelled, wrapApiCall } from "./api-helpers.js";
+export { requireClient, requireKomodoPermission, checkCancelled, wrapApiCall } from "./api-helpers.js";
 
 // --- Resource Links (ephemeral session-bound payloads) ---
 export { tryRegisterResource } from "./resource-link.js";

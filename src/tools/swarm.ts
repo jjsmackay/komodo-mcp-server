@@ -24,6 +24,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -107,6 +108,7 @@ export const getSwarmInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getSwarm",
       () => komodo.client.read("GetSwarm", { swarm: args.swarm }),
@@ -153,6 +155,7 @@ export const listSwarmNodesTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const nodes = await wrapApiCall(
       "listSwarmNodes",
       () => komodo.client.read("ListSwarmNodes", { swarm: args.swarm }),
@@ -188,6 +191,7 @@ export const listSwarmServicesTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const services = await wrapApiCall(
       "listSwarmServices",
       () => komodo.client.read("ListSwarmServices", { swarm: args.swarm }),
@@ -231,6 +235,7 @@ export const swarmActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Execute);
     const apiAction = SWARM_ACTION_API_MAP[args.action];
 
     let params: Record<string, unknown>;
@@ -338,6 +343,7 @@ export const deleteSwarmTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteSwarm",
       () => komodo.client.write("DeleteSwarm", { id: args.swarm }),

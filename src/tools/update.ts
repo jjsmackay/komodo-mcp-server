@@ -17,7 +17,14 @@
 import { defineTool, structured, z } from "mcp-server-framework";
 import { Types } from "komodo_client";
 import { ToolCategories, ToolScopes, config } from "../config/index.js";
-import { requireClient, wrapApiCall, renderUpdateList, renderUpdateInfo, tryRegisterResource } from "../utils/index.js";
+import {
+  requireClient,
+  requireKomodoPermission,
+  wrapApiCall,
+  renderUpdateList,
+  renderUpdateInfo,
+  tryRegisterResource,
+} from "../utils/index.js";
 import {
   updateIdSchema,
   updateListOutputSchema,
@@ -124,6 +131,10 @@ export const getUpdateInfoTool = defineTool({
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
     const result = await wrapApiCall("getUpdate", () => komodo.client.read("GetUpdate", { id: args.id }), abortSignal);
+    // Post-fetch check: the target resource is only known once the Update is read (there's
+    // no way to know which resource an update id refers to beforehand). Defense-in-depth before
+    // returning log content — the wrapApiCall 403 backstop already covers the read above.
+    await requireKomodoPermission(result.target, Types.PermissionLevel.Read);
     const summary = projectFullSummary(result);
     const link = tryRegisterResource({
       ctx: { sessionId },

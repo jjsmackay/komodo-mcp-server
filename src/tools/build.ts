@@ -20,6 +20,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -112,6 +113,7 @@ export const getBuildInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Build", id: args.build }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getBuild",
       () => komodo.client.read("GetBuild", { build: args.build }),
@@ -165,6 +167,7 @@ export const buildActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Build", id: args.build }, Types.PermissionLevel.Execute);
     const apiAction = BUILD_ACTION_API_MAP[args.action];
     if (args.action === "run") {
       const update = await wrapExecuteAndPoll(
@@ -215,6 +218,10 @@ export const getBuildLogsTool = defineTool({
       () => komodo.client.read("GetUpdate", { id: args.update_id }),
       abortSignal,
     );
+    // Post-fetch check: the target resource is only known once the Update is read (there's
+    // no way to know which build an update_id refers to beforehand). Defense-in-depth before
+    // returning log content — the wrapApiCall 403 backstop already covers the read above.
+    await requireKomodoPermission(update.target, Types.PermissionLevel.Read);
 
     const buildName = update.target.id || args.update_id;
 
@@ -342,6 +349,7 @@ export const deleteBuildTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Build", id: args.build }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteBuild",
       () => komodo.client.write("DeleteBuild", { id: args.build }),

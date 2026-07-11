@@ -27,6 +27,7 @@ import {
 } from "./schemas/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -94,6 +95,7 @@ export const getServerStatsTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
     const stats = await wrapApiCall(
       `get stats for server '${args.server}'`,
       () => komodo.client.read("GetServerState", { server: args.server }),
@@ -122,6 +124,7 @@ export const getServerInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getServerInfo",
       () => komodo.client.read("GetServer", { server: args.server }),
@@ -205,6 +208,7 @@ export const deleteServerTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteServer",
       () => komodo.client.write("DeleteServer", { id: args.server }),
@@ -253,6 +257,7 @@ export const serverActionTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Execute);
     const apiAction = SERVER_ACTION_API_MAP[args.action];
 
     let params: Record<string, unknown>;

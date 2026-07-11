@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Per-resource permission pre-checks on all resource-scoped tools**: authenticated requests now
+  verify the user's Komodo permission on the target resource (Read/Execute/Write) *before* the API
+  call runs, failing fast with a clear `AuthorizationError` and a `permission.denied` audit entry
+  instead of a raw Komodo error. A short-lived cache (30s) avoids an extra round-trip per tool
+  call. A backstop in the shared API-call wrapper also reclassifies any Komodo 403 (or a 500
+  carrying a permission message) into the same clean error/audit path as a fallback. Wired into
+  every resource domain (server, stack, deployment, build, repo, procedure, action, alerter,
+  resource sync, swarm, container, exec): info/stats reads require Read, lifecycle actions require
+  Execute, deletes require Write. Container and terminal-exec tools have no dedicated `Container`
+  resource type in Komodo, so they gate on the parent server instead. `komodo_update_info` and
+  `komodo_build_logs` only learn their target resource from the fetched payload itself, so their
+  check runs immediately after the read and before any content is returned. List and apply
+  (create/update) tools are intentionally left unchecked — Komodo's own backend is the authority
+  for those.
 - **MCP authentication now defaults to enabled**: when neither `[auth].enabled` nor `MCP_AUTH_ENABLED`
   is set, HTTP/HTTPS mode now defaults to auth ON (previously OFF unless an OAuth provider was
   configured) — Komodo always offers local username/password login whenever `KOMODO_URL` is set, so

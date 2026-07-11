@@ -25,6 +25,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -103,6 +104,7 @@ export const getActionInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Action", id: args.action_id }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getAction",
       () => komodo.client.read("GetAction", { action: args.action_id }),
@@ -145,6 +147,7 @@ export const actionActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Action", id: args.action_id }, Types.PermissionLevel.Execute);
     const update = await wrapExecuteAndPoll(
       `${args.action} action '${args.action_id}'`,
       () =>
@@ -225,6 +228,7 @@ export const deleteActionTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Action", id: args.action_id }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteAction",
       () => komodo.client.write("DeleteAction", { id: args.action_id }),

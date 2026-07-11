@@ -19,6 +19,7 @@ import { PARAM_DESCRIPTIONS, ToolCategories, ToolScopes, config } from "../confi
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -92,6 +93,7 @@ export const getStackInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Stack", id: args.stack }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getStackInfo",
       () => komodo.client.read("GetStack", { stack: args.stack }),
@@ -174,6 +176,7 @@ export const deleteStackTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Stack", id: args.stack }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteStack",
       () => komodo.client.write("DeleteStack", { id: args.stack }),
@@ -221,6 +224,7 @@ export const stackActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Stack", id: args.stack }, Types.PermissionLevel.Execute);
     const apiAction = STACK_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action} stack`,

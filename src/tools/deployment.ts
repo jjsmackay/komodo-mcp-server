@@ -19,6 +19,7 @@ import { PARAM_DESCRIPTIONS, ToolCategories, ToolScopes, config } from "../confi
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -98,6 +99,7 @@ export const getDeploymentInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Deployment", id: args.deployment }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getDeployment",
       () => komodo.client.read("GetDeployment", { deployment: args.deployment }),
@@ -184,6 +186,7 @@ export const deleteDeploymentTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Deployment", id: args.deployment }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteDeployment",
       () => komodo.client.write("DeleteDeployment", { id: args.deployment }),
@@ -231,6 +234,7 @@ export const deploymentActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Deployment", id: args.deployment }, Types.PermissionLevel.Execute);
     const apiAction = DEPLOYMENT_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action} deployment`,

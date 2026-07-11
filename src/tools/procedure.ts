@@ -19,6 +19,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -97,6 +98,7 @@ export const getProcedureInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Procedure", id: args.procedure }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getProcedure",
       () => komodo.client.read("GetProcedure", { procedure: args.procedure }),
@@ -139,6 +141,7 @@ export const procedureActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Procedure", id: args.procedure }, Types.PermissionLevel.Execute);
     const update = await wrapExecuteAndPoll(
       `${args.action} procedure '${args.procedure}'`,
       () => komodo.client.execute("RunProcedure", { procedure: args.procedure }),
@@ -215,6 +218,7 @@ export const deleteProcedureTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Procedure", id: args.procedure }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteProcedure",
       () => komodo.client.write("DeleteProcedure", { id: args.procedure }),

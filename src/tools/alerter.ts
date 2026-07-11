@@ -18,6 +18,7 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   paginate,
   renderAlerterList,
@@ -88,6 +89,7 @@ export const getAlerterInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Alerter", id: args.alerter }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getAlerter",
       () => komodo.client.read("GetAlerter", { alerter: args.alerter }),
@@ -180,6 +182,7 @@ export const deleteAlerterTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Alerter", id: args.alerter }, Types.PermissionLevel.Write);
     const result = await wrapApiCall(
       "deleteAlerter",
       () => komodo.client.write("DeleteAlerter", { id: args.alerter }),

@@ -20,7 +20,7 @@ import { Types } from "komodo_client";
 import { ToolCategories, ToolScopes } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import { execInputSchema, execOutputSchema } from "./schemas/index.js";
-import { requireClient, wrapApiCall, renderExecResult } from "../utils/index.js";
+import { requireClient, requireKomodoPermission, wrapApiCall, renderExecResult } from "../utils/index.js";
 
 // ============================================================================
 // Constants
@@ -223,6 +223,7 @@ export const execTool = defineTool({
       case "server": {
         if (!args.server) throw AppErrorFactory.validation.fieldRequired("server");
         const server = args.server;
+        await requireKomodoPermission({ type: "Server", id: server }, Types.PermissionLevel.Execute);
         const stream = await wrapApiCall(
           "executeServerTerminal",
           () =>
@@ -261,6 +262,7 @@ export const execTool = defineTool({
         if (!args.container) throw AppErrorFactory.validation.fieldRequired("container");
         const server = args.server;
         const container = args.container;
+        await requireKomodoPermission({ type: "Server", id: server }, Types.PermissionLevel.Execute);
         const result = await wrapApiCall(
           "executeContainerExec",
           () =>
@@ -295,6 +297,7 @@ export const execTool = defineTool({
       case "deployment": {
         if (!args.deployment) throw AppErrorFactory.validation.fieldRequired("deployment");
         const deployment = args.deployment;
+        await requireKomodoPermission({ type: "Deployment", id: deployment }, Types.PermissionLevel.Execute);
         const result = await wrapApiCall(
           "executeDeploymentExec",
           () =>
@@ -329,6 +332,7 @@ export const execTool = defineTool({
         if (!args.service) throw AppErrorFactory.validation.fieldRequired("service");
         const stack = args.stack;
         const service = args.service;
+        await requireKomodoPermission({ type: "Stack", id: stack }, Types.PermissionLevel.Execute);
         const result = await wrapApiCall(
           "executeStackServiceExec",
           () =>
