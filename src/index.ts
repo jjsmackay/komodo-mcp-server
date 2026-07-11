@@ -30,6 +30,7 @@ import {
 import { configureKomodoConnections, stopKomodoConnections, resolveAuth, KomodoClient } from "./client.js";
 import { AuthenticationError } from "./errors/index.js";
 import { buildKomodoContext, komodoAuthInfo } from "./auth/komodo-identity.js";
+import { komodoLoginPage } from "./auth/login.js";
 
 // Side-effect imports — register all tools in the global registry
 import "./tools/index.js";
@@ -112,6 +113,7 @@ if (authActive) {
       const { provider, callbackHandler, localLoginHandler } = await createOAuthProvider([], {
         serverUrl: mcpServerUrl,
         localLogin,
+        renderLoginPage: komodoLoginPage,
       });
 
       authConfig = {
