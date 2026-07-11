@@ -18,8 +18,11 @@ import {
   resolveAuthConfig,
   configureDynamicResourceRegistry,
   defineDynamicResourceTemplate,
+  iconFromFile,
 } from "mcp-server-framework";
 import type { AuthOptions, LocalLoginConfig } from "mcp-server-framework";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
   SERVER_NAME,
   SERVER_VERSION,
@@ -34,6 +37,14 @@ import { komodoLoginPage } from "./auth/login.js";
 
 // Side-effect imports — register all tools in the global registry
 import "./tools/index.js";
+
+// MCP server icon — read once at startup relative to this compiled module's own
+// location (mirrors resolveVersion()'s import.meta.url pattern), so it resolves
+// correctly both locally and in the Docker image, where only build/ exists.
+const komodoIcon = iconFromFile(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "auth/assets/favicon.svg"),
+  "image/svg+xml",
+);
 
 // Register [komodo] config file section before server init
 registerKomodoConfigSection();
@@ -167,6 +178,8 @@ if (httpMode && anonymousMode && resolveAuth(startupCreds) !== null) {
 const { start } = createServer({
   name: SERVER_NAME,
   version: SERVER_VERSION,
+  title: "Komodo MCP Server",
+  icons: [komodoIcon],
 
   capabilities: {
     tools: { listChanged: true },

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own Komodo credentials rather than a single shared global connection. External OAuth
   providers (Google/GitHub/generic OIDC) are not wired in yet — see the upcoming
   `feat/oauth-login` work.
+- **MCP server icon & title**: The server now advertises a title ("Komodo MCP Server") and the
+  Komodo lizard mark as its icon via the MCP `serverInfo` `title`/`icons` fields, so MCP clients
+  that support the spec's icon/title extension show Komodo branding instead of a generic
+  placeholder.
 
 ### Security
 
