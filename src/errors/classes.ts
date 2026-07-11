@@ -196,7 +196,7 @@ export class AuthenticationError extends AppError {
 
   static tokenMissing(): AuthenticationError {
     return new AuthenticationError(getAppMessage("AUTH_TOKEN_MISSING"), {
-      recoveryHint: "Authentication token is missing. Use komodo_configure to authenticate first.",
+      recoveryHint: "Authentication token is missing. Sign in via OAuth to authenticate.",
     });
   }
 }
@@ -267,14 +267,19 @@ export class ClientNotConfiguredError extends AppError {
       statusCode: HttpStatus.PRECONDITION_REQUIRED,
       mcpCode: ErrorCode.InvalidRequest,
       cause: options.cause,
-      recoveryHint: options.recoveryHint || "Use the komodo_configure tool to set up the Komodo client.",
+      recoveryHint:
+        options.recoveryHint ||
+        "Set [komodo] in config.toml (or KOMODO_URL/KOMODO_API_KEY etc. env vars) and restart the server, " +
+          "or sign in via OAuth if per-user authentication is enabled.",
       context: options.context,
     });
   }
 
   static notConfigured(): ClientNotConfiguredError {
     return new ClientNotConfiguredError(getAppMessage("CLIENT_NOT_CONFIGURED"), {
-      recoveryHint: "Use the komodo_configure tool to set up the connection with URL, username, and password.",
+      recoveryHint:
+        "Set [komodo] in config.toml (or KOMODO_URL/KOMODO_API_KEY etc. env vars) and restart the server, " +
+        "or sign in via OAuth if per-user authentication is enabled.",
     });
   }
 

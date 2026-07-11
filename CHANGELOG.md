@@ -7,7 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --------------------------------------------------------------
 ## [1.5.0] - 
-## [Unreleased]
+
+### Added
+
+- **Per-user Komodo authentication (local login)**: Sign in to the MCP server with your Komodo
+  username/password. Each authenticated user gets their own isolated Komodo session, derived from
+  their own Komodo credentials rather than a single shared global connection. External OAuth
+  providers (Google/GitHub/generic OIDC) are not wired in yet — see the upcoming
+  `feat/oauth-login` work.
+
+### Security
+
+- **MCP authentication now defaults to enabled**: when neither `[auth].enabled` nor `MCP_AUTH_ENABLED`
+  is set, HTTP/HTTPS mode now defaults to auth ON (previously OFF unless an OAuth provider was
+  configured) — Komodo always offers local username/password login whenever `KOMODO_URL` is set, so
+  there's no reason to run open by default. **Upgrade note:** existing deployments that rely on the
+  old implicit "no `[auth]` section = anonymous" default will start requiring login on next restart;
+  set `MCP_AUTH_ENABLED=false` or `[auth].enabled = false` to keep the old behavior. `MCP_AUTH_ENABLED`
+  is now also honoured from a `.env` file, not just a real exported environment variable.
+
+### Changed
+
+- **Reusable auth code moved into MCP-Server-Framework**: The browser OAuth/OIDC login flow now uses
+  the framework's generic `createBrowserOAuthLogin()` (callback routes mounted via the new
+  `configureHttpApp` hook); per-session credentials use the framework's typed `defineAuthExtra`
+  binding instead of ad-hoc `auth.extra` casts. Komodo retains only Komodo-specific glue
+  (credential exchange, provider config resolution).
+
+### Removed
+
+- **`komodo_configure` tool**: The global Komodo connection can no longer be set or changed at
+  runtime via a tool call — it wasn't compatible with the new per-user connection model (a
+  connection is resolved per request from the auth context; there is no longer a single mutable
+  global client to repoint at runtime). Going forward the global connection comes only from
+  startup config (`[komodo]` in `config.toml` / `KOMODO_*` env vars, stdio or auth-disabled HTTP
+  mode) or from each user's own login — never from an in-chat tool.
+  `komodo_health_check` is unaffected and remains the way to check connection status.
+- **Dead auth scaffolding** left over from an earlier browser-client design: the self-signed
+  `jwt-token-exchange` MCP bearer module, the unused `session-auth` bridge, the legacy
+  `integration/oidc-bearer-auth` middleware, and a duplicate `extractBearerToken` (the framework
+  provides the canonical one).
 
 ## [1.4.1] - Fixes tools and update dependencies
 

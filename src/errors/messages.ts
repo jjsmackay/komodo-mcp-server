@@ -47,7 +47,7 @@ export const AppMessages = {
   DEPLOYMENT_NOT_FOUND: "Deployment '{deployment}' not found",
 
   // Client
-  CLIENT_NOT_CONFIGURED: "Komodo client is not configured. Use komodo_configure to set up connection.",
+  CLIENT_NOT_CONFIGURED: "Komodo client is not configured. Set [komodo] in config.toml or sign in via OAuth.",
   CLIENT_NOT_CONNECTED: "Komodo client is not connected. Check configuration and connectivity.",
   CLIENT_CONFIGURATION_INVALID: "Invalid client configuration: {reason}",
 } as const;

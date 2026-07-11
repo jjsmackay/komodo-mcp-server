@@ -2,7 +2,11 @@
  * Application Environment Configuration
  *
  * Komodo-specific environment variables only.
- * Framework variables (MCP_TRANSPORT, MCP_PORT, etc.) are handled by the framework.
+ * Framework variables (MCP_TRANSPORT, MCP_PORT, MCP_AUTH_*, etc.) are handled by the framework.
+ *
+ * MCP-server user authentication (OAuth providers) is configured via the framework-generic
+ * `[auth]` section and resolved through `resolveAuthConfig()` — NOT here. This module only
+ * covers the downstream Komodo *connection* (the global/service credentials).
  *
  * @module config/env
  */
@@ -30,7 +34,7 @@ export const appEnvSchema = z.object({
   /** API Secret for key-based authentication */
   KOMODO_API_SECRET: z.string().optional(),
 
-  /** Pre-existing JWT token (e.g. obtained via OIDC, GitHub, or Google OAuth in browser) */
+  /** Pre-existing JWT token (e.g. extracted from a Komodo browser session) */
   KOMODO_JWT_TOKEN: z.string().optional(),
 
   /** Path to file containing the username (Docker secrets) */
@@ -73,6 +77,11 @@ export const config = appEnvSchema.parse(process.env);
 // Runtime Credential Reader
 // ============================================================================
 
+/**
+ * Global Komodo connection credentials (the service-account fallback used in stdio /
+ * auth-disabled mode). Per-user sessions never use these — they connect with the user's
+ * own minted JWT.
+ */
 export interface KomodoCredentials {
   url?: string | undefined;
   username?: string | undefined;
@@ -97,7 +106,7 @@ function readSecretFile(filePath: string | undefined): string | undefined {
 }
 
 /**
- * Read Komodo credentials at runtime.
+ * Read the global Komodo connection credentials at runtime.
  *
  * Sources (highest priority wins):
  * 1. Environment variables (process.env)
@@ -126,7 +135,7 @@ export function getKomodoCredentials(): KomodoCredentials {
 // Config File Section
 // ============================================================================
 
-/** Schema for the `[komodo]` section in config files (config.toml/yaml/json) */
+/** Schema for the `[komodo]` section in config files (config.toml/yaml/json) — connection only. */
 const komodoConfigFileSchema = z.object({
   /** Komodo Core API URL */
   url: z.string().url().optional(),
@@ -146,7 +155,7 @@ const komodoConfigFileSchema = z.object({
   api_secret: z.string().optional(),
   /** Path to file containing the API secret (Docker secrets) */
   api_secret_file: z.string().optional(),
-  /** Pre-existing JWT token (e.g. from OIDC/OAuth browser login) */
+  /** Pre-existing JWT token */
   jwt_token: z.string().optional(),
   /** Path to file containing the JWT token (Docker secrets) */
   jwt_token_file: z.string().optional(),

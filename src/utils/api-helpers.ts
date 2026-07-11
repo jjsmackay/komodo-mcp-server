@@ -15,8 +15,9 @@ import {
   AuthenticationError,
   extractKomodoError,
 } from "../errors/index.js";
-import { OperationCancelledError } from "mcp-server-framework";
-import { komodoConnection } from "../client.js";
+import { OperationCancelledError, getCurrentToolContext } from "mcp-server-framework";
+import { connectUserClient, getGlobalClient } from "../client.js";
+import { komodoIdentity } from "../auth/komodo-identity.js";
 
 // ============================================================================
 // Error Code Sets
@@ -33,14 +34,37 @@ const TIMEOUT_ERROR_CODES = new Set(["ECONNABORTED", "UND_ERR_CONNECT_TIMEOUT"])
 // ============================================================================
 
 /**
- * Returns the connected Komodo client.
- * Throws ClientNotConfiguredError with a state-aware message if not connected.
+ * Returns the Komodo client for the current tool call, resolved by operating mode.
+ *
+ * Reads the current tool context's auth (via AsyncLocalStorage, set by the framework
+ * before each handler runs):
+ * - **Authenticated** request → a client scoped to that user's minted Komodo JWT, built
+ *   fresh from the request's own `auth.extra` so users are strictly isolated.
+ * - **Anonymous** request (stdio, or HTTP with auth disabled) → the global service
+ *   connection from the `[komodo]` credentials.
+ *
+ * Synchronous by design (no `await` at the ~80 call sites): the per-user client is a thin,
+ * stateless JWT wrapper, and the global connection is already established at startup.
  */
 export function requireClient(): KomodoClient {
-  const client = komodoConnection.getClient();
-  if (!client) {
+  const auth = getCurrentToolContext()?.auth;
+  const identity = komodoIdentity.read(auth);
+
+  if (identity) {
+    // Authenticated Komodo user → their own JWT-scoped client.
+    return connectUserClient(identity.komodoJwt);
+  }
+
+  if (auth) {
+    // Authenticated to the MCP server but no Komodo identity is bound. This should not
+    // occur — the OAuth hooks deny sessions for users that don't exist in Komodo — so
+    // treat it as a misconfiguration rather than silently falling back to global creds.
     throw ClientNotConfiguredError.notConfigured();
   }
+
+  // Anonymous request → global service connection (stdio / auth-disabled HTTP).
+  const client = getGlobalClient();
+  if (!client) throw ClientNotConfiguredError.notConfigured();
   return client;
 }
 
