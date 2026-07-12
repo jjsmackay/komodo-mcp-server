@@ -25,6 +25,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -265,6 +266,16 @@ export const swarmActionTool = defineTool({
         break;
     }
 
+    if (args.action !== "update_node") {
+      const removeTargets = args.nodes ?? args.services ?? args.stacks ?? [];
+      await requireDestructiveConfirmation({
+        action: args.action.replace(/_/g, " "),
+        resourceType: "swarm",
+        resourceId: args.swarm,
+        detail: `Targets: ${removeTargets.join(", ")}`,
+      });
+    }
+
     const update = await wrapExecuteAndPoll(
       `${args.action} on swarm '${args.swarm}'`,
       // @sdk-constraint — SDK execute() type uses literal-keyed unions; runtime accepts mapped string
@@ -344,6 +355,7 @@ export const deleteSwarmTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "swarm", resourceId: args.swarm });
     const result = await wrapApiCall(
       "deleteSwarm",
       () => komodo.client.write("DeleteSwarm", { id: args.swarm }),

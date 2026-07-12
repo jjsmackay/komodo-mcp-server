@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Manual confirmation for destructive actions (MCP elicitation)**: destructive tools now ask the
+  human operator for explicit approval before executing — via the client's elicitation UI
+  (`elicitation/create`), requiring both "accept" AND a ticked confirm checkbox (double opt-in).
+  Gated per tool *and* per action: all 12 `*_delete` tools, `komodo_exec` (with the command shown
+  in the prompt), `komodo_server_action` (stop_all/prune_*/delete_* — batch start/restart/pause
+  stay unprompted), stack/deployment `destroy`, swarm `remove_*`, and the composite runners
+  `komodo_resource_sync_action run` (its diff can delete other resources), `komodo_procedure_action
+  run`, and `komodo_action_action run`. Benign lifecycle actions (deploy/pull/start/restart/
+  pause/unpause/stop) are never prompted. Declined/cancelled/timed-out prompts abort with a clear
+  `ConfirmationRequiredError` and a `confirmation.declined` audit entry — a timeout never falls
+  open. Configuration: `KOMODO_CONFIRM_DESTRUCTIVE` (default `true`) turns the feature off
+  entirely; `KOMODO_CONFIRM_FALLBACK` (default `deny`) controls clients that cannot prompt (no
+  elicitation capability, or stateless HTTP mode) — `deny` refuses such destructive calls
+  (fail-closed), `allow` executes them with a warning and a `confirmation.bypassed` audit entry.
+  **Note for stdio/simple clients without elicitation support:** set `KOMODO_CONFIRM_FALLBACK=allow`
+  or `KOMODO_CONFIRM_DESTRUCTIVE=false` to keep destructive tools usable.
 - **Per-resource permission pre-checks on all resource-scoped tools**: authenticated requests now
   verify the user's Komodo permission on the target resource (Read/Execute/Write) *before* the API
   call runs, failing fast with a clear `AuthorizationError` and a `permission.denied` audit entry

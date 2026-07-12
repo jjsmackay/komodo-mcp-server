@@ -21,6 +21,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -350,6 +351,7 @@ export const deleteBuildTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Build", id: args.build }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "build", resourceId: args.build });
     const result = await wrapApiCall(
       "deleteBuild",
       () => komodo.client.write("DeleteBuild", { id: args.build }),

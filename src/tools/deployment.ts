@@ -20,6 +20,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -187,6 +188,12 @@ export const deleteDeploymentTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Deployment", id: args.deployment }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({
+      action: "delete",
+      resourceType: "deployment",
+      resourceId: args.deployment,
+      detail: "Also stops and removes the associated container.",
+    });
     const result = await wrapApiCall(
       "deleteDeployment",
       () => komodo.client.write("DeleteDeployment", { id: args.deployment }),
@@ -235,6 +242,14 @@ export const deploymentActionTool = defineTool({
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Deployment", id: args.deployment }, Types.PermissionLevel.Execute);
+    if (args.action === "destroy") {
+      await requireDestructiveConfirmation({
+        action: "destroy",
+        resourceType: "deployment",
+        resourceId: args.deployment,
+        detail: "Removes the deployment's container; the Komodo config is preserved.",
+      });
+    }
     const apiAction = DEPLOYMENT_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action} deployment`,

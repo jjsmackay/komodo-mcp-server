@@ -20,7 +20,13 @@ import { Types } from "komodo_client";
 import { ToolCategories, ToolScopes } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import { execInputSchema, execOutputSchema } from "./schemas/index.js";
-import { requireClient, requireKomodoPermission, wrapApiCall, renderExecResult } from "../utils/index.js";
+import {
+  requireClient,
+  requireKomodoPermission,
+  requireDestructiveConfirmation,
+  wrapApiCall,
+  renderExecResult,
+} from "../utils/index.js";
 
 // ============================================================================
 // Constants
@@ -218,12 +224,20 @@ export const execTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    // Shown in the confirmation prompt — keep it recognizable but bounded.
+    const commandPreview = args.command.length > 200 ? `${args.command.slice(0, 200)}…` : args.command;
 
     switch (args.target) {
       case "server": {
         if (!args.server) throw AppErrorFactory.validation.fieldRequired("server");
         const server = args.server;
         await requireKomodoPermission({ type: "Server", id: server }, Types.PermissionLevel.Execute);
+        await requireDestructiveConfirmation({
+          action: "execute shell command on",
+          resourceType: "server",
+          resourceId: server,
+          detail: `Command: ${commandPreview}`,
+        });
         const stream = await wrapApiCall(
           "executeServerTerminal",
           () =>
@@ -263,6 +277,12 @@ export const execTool = defineTool({
         const server = args.server;
         const container = args.container;
         await requireKomodoPermission({ type: "Server", id: server }, Types.PermissionLevel.Execute);
+        await requireDestructiveConfirmation({
+          action: "execute shell command in",
+          resourceType: "container",
+          resourceId: container,
+          detail: `On server "${server}"; command: ${commandPreview}`,
+        });
         const result = await wrapApiCall(
           "executeContainerExec",
           () =>
@@ -298,6 +318,12 @@ export const execTool = defineTool({
         if (!args.deployment) throw AppErrorFactory.validation.fieldRequired("deployment");
         const deployment = args.deployment;
         await requireKomodoPermission({ type: "Deployment", id: deployment }, Types.PermissionLevel.Execute);
+        await requireDestructiveConfirmation({
+          action: "execute shell command in",
+          resourceType: "deployment",
+          resourceId: deployment,
+          detail: `Command: ${commandPreview}`,
+        });
         const result = await wrapApiCall(
           "executeDeploymentExec",
           () =>
@@ -333,6 +359,12 @@ export const execTool = defineTool({
         const stack = args.stack;
         const service = args.service;
         await requireKomodoPermission({ type: "Stack", id: stack }, Types.PermissionLevel.Execute);
+        await requireDestructiveConfirmation({
+          action: "execute shell command in",
+          resourceType: "stack service",
+          resourceId: `${stack}/${service}`,
+          detail: `Command: ${commandPreview}`,
+        });
         const result = await wrapApiCall(
           "executeStackServiceExec",
           () =>

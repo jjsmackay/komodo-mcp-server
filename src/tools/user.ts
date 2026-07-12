@@ -12,7 +12,14 @@ import { defineTool, structured } from "mcp-server-framework";
 import type { Types } from "komodo_client";
 import { ToolCategories, ToolScopes } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
-import { requireClient, wrapApiCall, renderApiKeyList, renderApiKeyCreated, paginate } from "../utils/index.js";
+import {
+  requireClient,
+  requireDestructiveConfirmation,
+  wrapApiCall,
+  renderApiKeyList,
+  renderApiKeyCreated,
+  paginate,
+} from "../utils/index.js";
 import {
   listApiKeysOutputSchema,
   createApiKeyOutputSchema,
@@ -136,6 +143,13 @@ export const deleteApiKeyTool = defineTool({
       resolvedKey = match.key;
       resolvedName = match.name;
     }
+
+    await requireDestructiveConfirmation({
+      action: "delete",
+      resourceType: "API key",
+      resourceId: resolvedName ?? resolvedKey,
+      detail: "Clients authenticating with this key will lose access immediately.",
+    });
 
     await wrapApiCall(
       "deleteApiKey",

@@ -26,6 +26,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -148,6 +149,14 @@ export const actionActionTool = defineTool({
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Action", id: args.action_id }, Types.PermissionLevel.Execute);
+    // 'run' is currently the only verb; if a non-mutating verb (e.g. cancel) is added
+    // later, scope this confirmation to the run branch.
+    await requireDestructiveConfirmation({
+      action: "run",
+      resourceType: "action",
+      resourceId: args.action_id,
+      detail: "A Komodo Action is an arbitrary script running against the Komodo API.",
+    });
     const update = await wrapExecuteAndPoll(
       `${args.action} action '${args.action_id}'`,
       () =>
@@ -229,6 +238,7 @@ export const deleteActionTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Action", id: args.action_id }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "action", resourceId: args.action_id });
     const result = await wrapApiCall(
       "deleteAction",
       () => komodo.client.write("DeleteAction", { id: args.action_id }),

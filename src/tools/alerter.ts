@@ -19,6 +19,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   paginate,
   renderAlerterList,
@@ -183,6 +184,7 @@ export const deleteAlerterTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Alerter", id: args.alerter }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "alerter", resourceId: args.alerter });
     const result = await wrapApiCall(
       "deleteAlerter",
       () => komodo.client.write("DeleteAlerter", { id: args.alerter }),

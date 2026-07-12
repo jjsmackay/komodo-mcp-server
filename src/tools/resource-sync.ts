@@ -20,6 +20,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -157,6 +158,12 @@ export const resourceSyncActionTool = defineTool({
       // files. This check gates only the ResourceSync resource itself — it does not verify
       // Write on every resource the sync will touch; Komodo's own backend is the authority
       // for those individual writes.
+      await requireDestructiveConfirmation({
+        action: "run",
+        resourceType: "resource sync",
+        resourceId: args.resource_sync,
+        detail: "Applies the sync's pending diff — this may create, update, or DELETE other Komodo resources.",
+      });
       const update = await wrapExecuteAndPoll(
         `run resource sync '${args.resource_sync}'`,
         () => komodo.client.execute("RunSync", { sync: args.resource_sync }),
@@ -244,6 +251,11 @@ export const deleteResourceSyncTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "ResourceSync", id: args.resource_sync }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({
+      action: "delete",
+      resourceType: "resource sync",
+      resourceId: args.resource_sync,
+    });
     const result = await wrapApiCall(
       "deleteResourceSync",
       () => komodo.client.write("DeleteResourceSync", { id: args.resource_sync }),

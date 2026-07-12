@@ -257,6 +257,53 @@ export class NotFoundError extends AppError {
 }
 
 // ============================================================================
+// Confirmation Required Error
+// ============================================================================
+
+/**
+ * A destructive action was not confirmed by the user — either the confirmation
+ * prompt was declined/cancelled/timed out, or the client cannot prompt at all
+ * (no MCP elicitation support) and `KOMODO_CONFIRM_FALLBACK` is `"deny"`.
+ */
+export class ConfirmationRequiredError extends AppError {
+  constructor(message: string, options: Omit<BaseErrorOptions, "code"> = {}) {
+    super(message, {
+      code: "CONFIRMATION_REQUIRED",
+      statusCode: HttpStatus.PRECONDITION_REQUIRED,
+      mcpCode: ErrorCode.InvalidRequest,
+      cause: options.cause,
+      recoveryHint: options.recoveryHint,
+      context: options.context,
+    });
+  }
+
+  static declined(
+    action: string,
+    resourceType: string,
+    resourceId: string,
+    outcome: string,
+  ): ConfirmationRequiredError {
+    return new ConfirmationRequiredError(
+      getAppMessage("CONFIRM_DECLINED", { outcome, action, resourceType, resourceId }),
+      {
+        recoveryHint: "Retry the operation and approve the confirmation prompt (tick the confirm checkbox).",
+        context: { action, resourceType, resourceId, outcome },
+      },
+    );
+  }
+
+  static unavailable(action: string, resourceType: string, resourceId: string): ConfirmationRequiredError {
+    return new ConfirmationRequiredError(getAppMessage("CONFIRM_UNAVAILABLE", { action, resourceType, resourceId }), {
+      recoveryHint:
+        "Use an MCP client that supports elicitation, or set KOMODO_CONFIRM_FALLBACK=allow " +
+        "(execute without confirmation on such clients) or KOMODO_CONFIRM_DESTRUCTIVE=false " +
+        "(disable confirmations entirely).",
+      context: { action, resourceType, resourceId },
+    });
+  }
+}
+
+// ============================================================================
 // Client Not Configured Error
 // ============================================================================
 

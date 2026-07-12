@@ -20,6 +20,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -177,6 +178,7 @@ export const deleteStackTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Stack", id: args.stack }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "stack", resourceId: args.stack });
     const result = await wrapApiCall(
       "deleteStack",
       () => komodo.client.write("DeleteStack", { id: args.stack }),
@@ -225,6 +227,14 @@ export const stackActionTool = defineTool({
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Stack", id: args.stack }, Types.PermissionLevel.Execute);
+    if (args.action === "destroy") {
+      await requireDestructiveConfirmation({
+        action: "destroy",
+        resourceType: "stack",
+        resourceId: args.stack,
+        detail: "Removes the stack's containers (docker compose down); the Komodo config is preserved.",
+      });
+    }
     const apiAction = STACK_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action} stack`,

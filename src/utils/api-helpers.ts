@@ -14,6 +14,7 @@ import {
   ApiError,
   ConnectionError,
   AuthenticationError,
+  ConfirmationRequiredError,
   extractKomodoError,
 } from "../errors/index.js";
 import {
@@ -21,9 +22,12 @@ import {
   getCurrentToolContext,
   AuthorizationError,
   logAuditEvent,
+  logger,
+  elicitConfirmation,
 } from "mcp-server-framework";
 import { connectUserClient, getGlobalClient } from "../client.js";
 import { komodoIdentity, meetsPermissionLevel } from "../auth/komodo-identity.js";
+import { config } from "../config/index.js";
 
 // ============================================================================
 // Error Code Sets
@@ -135,6 +139,102 @@ export async function requireKomodoPermission(
       `Insufficient Komodo permission: ${target.type} '${target.id}' requires ${required}, but you have ${level}.`,
     );
   }
+}
+
+// ============================================================================
+// Destructive-Action Confirmation (manual user approval via MCP elicitation)
+// ============================================================================
+
+/** Describes the destructive operation a confirmation prompt is asking about. */
+export interface DestructiveConfirmationRequest {
+  /** Verb shown to the user, e.g. "delete", "destroy", "run", "execute command on" */
+  readonly action: string;
+  /** Resource kind, e.g. "stack", "server", "resource sync" */
+  readonly resourceType: string;
+  /** Resource id or name the user should recognize */
+  readonly resourceId: string;
+  /** Optional extra line (e.g. the shell command, or a cascade warning) */
+  readonly detail?: string | undefined;
+}
+
+/**
+ * Require, **before** the actual API call, that the human operator manually confirms a
+ * destructive operation via the client's MCP elicitation UI (accept + confirm checkbox).
+ *
+ * Policy (config-driven):
+ * - `KOMODO_CONFIRM_DESTRUCTIVE=false` → no-op (feature disabled).
+ * - Prompt declined / cancelled / timed out → throws {@link ConfirmationRequiredError}
+ *   and writes a `confirmation.declined` audit entry. Never falls open.
+ * - Client cannot prompt (no elicitation capability, stateless mode):
+ *   `KOMODO_CONFIRM_FALLBACK=deny` (default) → throws + `confirmation.unavailable` audit;
+ *   `KOMODO_CONFIRM_FALLBACK=allow` → executes with a warning + `confirmation.bypassed` audit.
+ *
+ * Unlike {@link requireKomodoPermission} this also applies to anonymous/global-mode
+ * requests — confirmation is about the human at the client, not the Komodo identity.
+ */
+export async function requireDestructiveConfirmation(req: DestructiveConfirmationRequest): Promise<void> {
+  if (!config.KOMODO_CONFIRM_DESTRUCTIVE) return;
+
+  const identity = komodoIdentity.read(getCurrentToolContext()?.auth);
+  const actor = { ...(identity && { userId: identity.komodoUserId, username: identity.username }) };
+  const target = `${req.resourceType}:${req.resourceId}`;
+
+  const message = [
+    `⚠️ ${capitalize(req.action)} ${req.resourceType} "${req.resourceId}"?`,
+    ...(req.detail ? [req.detail] : []),
+    "This action is destructive and may not be reversible.",
+  ].join("\n");
+
+  const outcome = await elicitConfirmation({ message });
+
+  switch (outcome) {
+    case "accepted":
+      return; // the framework's tool.call audit records the executed call
+
+    case "unsupported":
+      if (config.KOMODO_CONFIRM_FALLBACK === "allow") {
+        logger.warn(
+          "Destructive action executed WITHOUT user confirmation (client lacks elicitation, KOMODO_CONFIRM_FALLBACK=allow): %s %s",
+          req.action,
+          target,
+        );
+        logAuditEvent({
+          category: "confirmation",
+          action: "confirmation.bypassed",
+          outcome: "info",
+          actor,
+          target,
+          detail: { action: req.action, reason: "client lacks elicitation support" },
+        });
+        return;
+      }
+      logAuditEvent({
+        category: "confirmation",
+        action: "confirmation.unavailable",
+        outcome: "denied",
+        actor,
+        target,
+        detail: { action: req.action, fallback: config.KOMODO_CONFIRM_FALLBACK },
+      });
+      throw ConfirmationRequiredError.unavailable(req.action, req.resourceType, req.resourceId);
+
+    case "declined":
+    case "cancelled":
+    case "timeout":
+      logAuditEvent({
+        category: "confirmation",
+        action: "confirmation.declined",
+        outcome: "denied",
+        actor,
+        target,
+        detail: { action: req.action, outcome },
+      });
+      throw ConfirmationRequiredError.declined(req.action, req.resourceType, req.resourceId, outcome);
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // ============================================================================

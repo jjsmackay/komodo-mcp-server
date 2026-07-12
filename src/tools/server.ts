@@ -28,6 +28,7 @@ import {
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   paginate,
   wrapExecuteAndPoll,
@@ -209,6 +210,7 @@ export const deleteServerTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "server", resourceId: args.server });
     const result = await wrapApiCall(
       "deleteServer",
       () => komodo.client.write("DeleteServer", { id: args.server }),
@@ -266,6 +268,20 @@ export const serverActionTool = defineTool({
       params = { server: args.server, name: args.name };
     } else {
       params = { server: args.server };
+    }
+
+    // start/restart/pause/unpause_all are recoverable; stop-all, prune and delete are not.
+    if (
+      args.action === "stop_all_containers" ||
+      args.action.startsWith("prune_") ||
+      args.action.startsWith("delete_")
+    ) {
+      await requireDestructiveConfirmation({
+        action: args.action.replace(/_/g, " "),
+        resourceType: "server",
+        resourceId: args.server,
+        ...(args.name && { detail: `Target: "${args.name}"` }),
+      });
     }
 
     const update = await wrapExecuteAndPoll(

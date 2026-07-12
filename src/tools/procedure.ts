@@ -20,6 +20,7 @@ import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
   requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -142,6 +143,14 @@ export const procedureActionTool = defineTool({
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Procedure", id: args.procedure }, Types.PermissionLevel.Execute);
+    // 'run' is currently the only verb; if a non-mutating verb (e.g. cancel) is added
+    // later, scope this confirmation to the run branch.
+    await requireDestructiveConfirmation({
+      action: "run",
+      resourceType: "procedure",
+      resourceId: args.procedure,
+      detail: "A procedure is a composite workflow — its stages may deploy, build, or destroy other resources.",
+    });
     const update = await wrapExecuteAndPoll(
       `${args.action} procedure '${args.procedure}'`,
       () => komodo.client.execute("RunProcedure", { procedure: args.procedure }),
@@ -219,6 +228,7 @@ export const deleteProcedureTool = defineTool({
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
     await requireKomodoPermission({ type: "Procedure", id: args.procedure }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "procedure", resourceId: args.procedure });
     const result = await wrapApiCall(
       "deleteProcedure",
       () => komodo.client.write("DeleteProcedure", { id: args.procedure }),

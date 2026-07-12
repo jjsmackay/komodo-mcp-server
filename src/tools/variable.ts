@@ -20,6 +20,7 @@ import { ToolCategories, ToolScopes } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireDestructiveConfirmation,
   wrapApiCall,
   paginate,
   renderVariableList,
@@ -182,6 +183,12 @@ export const deleteVariableTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireDestructiveConfirmation({
+      action: "delete",
+      resourceType: "variable",
+      resourceId: args.name,
+      detail: "Stacks/Deployments referencing it via [[variable]] interpolation will fail afterwards.",
+    });
     const result = await wrapApiCall(
       "deleteVariable",
       () => komodo.client.write("DeleteVariable", { name: args.name }),

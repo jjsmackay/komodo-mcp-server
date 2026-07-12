@@ -12,7 +12,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { z, registerConfigSection, getAppConfig, durationSchema } from "mcp-server-framework";
+import { z, registerConfigSection, getAppConfig, durationSchema, booleanFromEnv } from "mcp-server-framework";
 
 // ============================================================================
 // Schema
@@ -63,6 +63,19 @@ export const appEnvSchema = z.object({
 
   /** Maximum number of dynamic resource entries kept in memory. Default: 1000 */
   KOMODO_RESOURCE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
+
+  /**
+   * Require manual user confirmation (MCP elicitation) before destructive tools execute
+   * (deletes, destroy, prune, exec, procedure/action/sync runs). Only the string "true"
+   * enables, anything else disables. Default: true
+   */
+  KOMODO_CONFIRM_DESTRUCTIVE: booleanFromEnv(true),
+
+  /**
+   * What to do when the client cannot prompt (no elicitation capability or stateless mode):
+   * "deny" refuses the destructive call, "allow" executes it with a warning. Default: "deny"
+   */
+  KOMODO_CONFIRM_FALLBACK: z.enum(["deny", "allow"]).default("deny"),
 });
 
 export type AppEnvConfig = z.infer<typeof appEnvSchema>;
