@@ -204,7 +204,7 @@ export const listSwarmServicesTool = defineTool({
       ...(s.Name ? { name: s.Name } : {}),
       ...(s.Image ? { image: s.Image } : {}),
       ...(s.Mode ? { mode: typeof s.Mode === "string" ? s.Mode : JSON.stringify(s.Mode) } : {}),
-      ...(s.Replicas !== undefined ? { replicas: s.Replicas } : {}),
+      ...(s.Replicas != null ? { replicas: s.Replicas } : {}),
     }));
 
     const { items, page } = paginate(allItems, args.cursor, args.page_size);

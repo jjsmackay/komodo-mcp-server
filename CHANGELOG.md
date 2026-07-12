@@ -68,6 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binding instead of ad-hoc `auth.extra` casts. Komodo retains only Komodo-specific glue
   (credential exchange, provider config resolution).
 
+### Fixed
+
+- **`komodo_action_list` / `komodo_procedure_list` failed with an output validation error**
+  ([#158](https://github.com/MP-Tool/komodo-mcp-server/pull/158), thanks @sai-roda): Komodo Core
+  returns JSON `null` (not a missing key) for `last_run_at` / `next_scheduled_run` on actions and
+  procedures that never ran or have no schedule — the upstream `komodo_client` TypeScript types
+  don't reflect this. The projection let `null` into the payload and output validation rejected
+  the whole response, so listing failed as soon as any unrun action existed. Null fields are now
+  omitted from the output (and the schemas tolerate `null` as defense-in-depth).
+- **Same `null`-vs-`undefined` class fixed in two more places** (audit follow-up to #158):
+  `komodo_update_info` failed with the same validation error for **in-progress** updates
+  (`end_ts` is `null` while an update is still running), and `komodo_update_list` emitted a bogus
+  `next_cursor: "null"` on the **last** page (`next_page` is `null` there), advertising a
+  non-existent next page that led paginating clients back to page 0 in an endless loop. The swarm
+  service list's `replicas` projection got the same defensive treatment.
+
 ### Removed
 
 - **`komodo_configure` tool**: The global Komodo connection can no longer be set or changed at
