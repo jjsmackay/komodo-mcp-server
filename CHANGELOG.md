@@ -6,8 +6,97 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 --------------------------------------------------------------
+## [1.5.0] - 
 
-## [Unreleased]
+### Added
+
+- **Per-user Komodo authentication (local login)**: Sign in to the MCP server with your Komodo
+  username/password. Each authenticated user gets their own isolated Komodo session, derived from
+  their own Komodo credentials rather than a single shared global connection. External OAuth
+  providers (Google/GitHub/generic OIDC) are not wired in yet — see the upcoming
+  `feat/oauth-login` work.
+- **MCP server icon & title**: The server now advertises a title ("Komodo MCP Server") and the
+  Komodo lizard mark as its icon via the MCP `serverInfo` `title`/`icons` fields, so MCP clients
+  that support the spec's icon/title extension show Komodo branding instead of a generic
+  placeholder.
+
+### Security
+
+- **Manual confirmation for destructive actions (MCP elicitation)**: destructive tools now ask the
+  human operator for explicit approval before executing — via the client's elicitation UI
+  (`elicitation/create`), requiring both "accept" AND a ticked confirm checkbox (double opt-in).
+  Gated per tool *and* per action: all 12 `*_delete` tools, `komodo_exec` (with the command shown
+  in the prompt), `komodo_server_action` (stop_all/prune_*/delete_* — batch start/restart/pause
+  stay unprompted), stack/deployment `destroy`, swarm `remove_*`, and the composite runners
+  `komodo_resource_sync_action run` (its diff can delete other resources), `komodo_procedure_action
+  run`, and `komodo_action_action run`. Benign lifecycle actions (deploy/pull/start/restart/
+  pause/unpause/stop) are never prompted. Declined/cancelled/timed-out prompts abort with a clear
+  `ConfirmationRequiredError` and a `confirmation.declined` audit entry — a timeout never falls
+  open. Configuration: `KOMODO_CONFIRM_DESTRUCTIVE` (default `true`) turns the feature off
+  entirely; `KOMODO_CONFIRM_FALLBACK` (default `deny`) controls clients that cannot prompt (no
+  elicitation capability, or stateless HTTP mode) — `deny` refuses such destructive calls
+  (fail-closed), `allow` executes them with a warning and a `confirmation.bypassed` audit entry.
+  **Note for stdio/simple clients without elicitation support:** set `KOMODO_CONFIRM_FALLBACK=allow`
+  or `KOMODO_CONFIRM_DESTRUCTIVE=false` to keep destructive tools usable.
+- **Per-resource permission pre-checks on all resource-scoped tools**: authenticated requests now
+  verify the user's Komodo permission on the target resource (Read/Execute/Write) *before* the API
+  call runs, failing fast with a clear `AuthorizationError` and a `permission.denied` audit entry
+  instead of a raw Komodo error. A short-lived cache (30s) avoids an extra round-trip per tool
+  call. A backstop in the shared API-call wrapper also reclassifies any Komodo 403 (or a 500
+  carrying a permission message) into the same clean error/audit path as a fallback. Wired into
+  every resource domain (server, stack, deployment, build, repo, procedure, action, alerter,
+  resource sync, swarm, container, exec): info/stats reads require Read, lifecycle actions require
+  Execute, deletes require Write. Container and terminal-exec tools have no dedicated `Container`
+  resource type in Komodo, so they gate on the parent server instead. `komodo_update_info` and
+  `komodo_build_logs` only learn their target resource from the fetched payload itself, so their
+  check runs immediately after the read and before any content is returned. List and apply
+  (create/update) tools are intentionally left unchecked — Komodo's own backend is the authority
+  for those.
+- **MCP authentication now defaults to enabled**: when neither `[auth].enabled` nor `MCP_AUTH_ENABLED`
+  is set, HTTP/HTTPS mode now defaults to auth ON (previously OFF unless an OAuth provider was
+  configured) — Komodo always offers local username/password login whenever `KOMODO_URL` is set, so
+  there's no reason to run open by default. **Upgrade note:** existing deployments that rely on the
+  old implicit "no `[auth]` section = anonymous" default will start requiring login on next restart;
+  set `MCP_AUTH_ENABLED=false` or `[auth].enabled = false` to keep the old behavior. `MCP_AUTH_ENABLED`
+  is now also honoured from a `.env` file, not just a real exported environment variable.
+
+### Changed
+
+- **Reusable auth code moved into MCP-Server-Framework**: The browser OAuth/OIDC login flow now uses
+  the framework's generic `createBrowserOAuthLogin()` (callback routes mounted via the new
+  `configureHttpApp` hook); per-session credentials use the framework's typed `defineAuthExtra`
+  binding instead of ad-hoc `auth.extra` casts. Komodo retains only Komodo-specific glue
+  (credential exchange, provider config resolution).
+
+### Fixed
+
+- **`komodo_action_list` / `komodo_procedure_list` failed with an output validation error**
+  ([#158](https://github.com/MP-Tool/komodo-mcp-server/pull/158), thanks @sai-roda): Komodo Core
+  returns JSON `null` (not a missing key) for `last_run_at` / `next_scheduled_run` on actions and
+  procedures that never ran or have no schedule — the upstream `komodo_client` TypeScript types
+  don't reflect this. The projection let `null` into the payload and output validation rejected
+  the whole response, so listing failed as soon as any unrun action existed. Null fields are now
+  omitted from the output (and the schemas tolerate `null` as defense-in-depth).
+- **Same `null`-vs-`undefined` class fixed in two more places** (audit follow-up to #158):
+  `komodo_update_info` failed with the same validation error for **in-progress** updates
+  (`end_ts` is `null` while an update is still running), and `komodo_update_list` emitted a bogus
+  `next_cursor: "null"` on the **last** page (`next_page` is `null` there), advertising a
+  non-existent next page that led paginating clients back to page 0 in an endless loop. The swarm
+  service list's `replicas` projection got the same defensive treatment.
+
+### Removed
+
+- **`komodo_configure` tool**: The global Komodo connection can no longer be set or changed at
+  runtime via a tool call. Going forward it comes only from startup config (`[komodo]` in
+  `config.toml` / `KOMODO_*` env vars, stdio or auth-disabled HTTP mode) or from each user's own
+  login — never from an in-chat tool. This closes the gap where the tool's runtime reconfiguration
+  wasn't covered by the startup-time "insecure global login" security warning, by removing the
+  reconfiguration path entirely rather than adding a second warning call site.
+  `komodo_health_check` is unaffected and remains the way to check connection status.
+- **Dead auth scaffolding** left over from an earlier browser-client design: the self-signed
+  `jwt-token-exchange` MCP bearer module, the unused `session-auth` bridge, the legacy
+  `integration/oidc-bearer-auth` middleware, and a duplicate `extractBearerToken` (the framework
+  provides the canonical one).
 
 ## [1.4.1] - Fixes tools and update dependencies
 

@@ -12,7 +12,7 @@ Tools are organized as flat files by domain in `src/tools/`:
 ```
 tools/
 ├── index.ts          # Side-effect imports (auto-registration)
-├── config.ts         # komodo_configure, komodo_health_check
+├── config.ts         # komodo_health_check
 ├── container.ts      # Container tools
 ├── server.ts         # Server tools
 ├── stack.ts          # Stack tools
@@ -32,7 +32,7 @@ tools/
 
 Convention: `komodo_<domain>_<action>`
 
-Examples: `komodo_container_action`, `komodo_container_list`, `komodo_stack_action`, `komodo_exec`, `komodo_configure`
+Examples: `komodo_container_action`, `komodo_container_list`, `komodo_stack_action`, `komodo_exec`, `komodo_health_check`
 
 ## Complete Tool Example
 

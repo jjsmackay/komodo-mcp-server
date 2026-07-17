@@ -1,6 +1,6 @@
 {
   "name": "komodo-mcp-server",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "mcpName": "io.github.MP-Tool/komodo-mcp-server",
   "description": "Model Context Protocol Server for Komodo (Container Manager)",
   "type": "module",
@@ -10,8 +10,9 @@
   },
   "types": "build/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "build:prod": "tsc --project tsconfig.prod.json",
+    "build": "tsc && npm run copy-assets",
+    "build:prod": "tsc --project tsconfig.prod.json && npm run copy-assets",
+    "copy-assets": "cp -r src/auth/assets build/auth/assets",
     "start": "node build/index.js",
     "dev": "npm run build && node build/index.js",
     "typecheck": "tsc --noEmit",
@@ -51,6 +52,7 @@
   "files": [
     "build/**/*.js",
     "build/**/*.d.ts",
+    "build/auth/assets/**/*",
     "build/VERSION",
     "README.md",
     "LICENSE.txt",

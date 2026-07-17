@@ -199,6 +199,16 @@ Required when `MCP_TRANSPORT=https`:
 | `MCP_HELMET_CSP` | `security.helmet_csp` | — | Content Security Policy |
 | `MCP_HELMET_FRAME_OPTIONS` | `security.helmet_frame_options` | `DENY` | X-Frame-Options header |
 
+### Destructive-Action Confirmation
+
+Destructive tools (deletes, destroy, prune, exec, procedure/action/sync runs) ask the human
+operator for approval via the MCP client's elicitation UI before executing.
+
+| Variable | Config Key | Default | Description |
+|----------|-----------|---------|-------------|
+| `KOMODO_CONFIRM_DESTRUCTIVE` | *(env only)* | `true` | Require manual confirmation for destructive tools (only the string `"true"` enables) |
+| `KOMODO_CONFIRM_FALLBACK` | *(env only)* | `deny` | When the client cannot prompt (no elicitation support / stateless mode): `deny` refuses the call, `allow` executes with a warning |
+
 ## Sessions
 
 | Variable | Config Key | Default | Description |

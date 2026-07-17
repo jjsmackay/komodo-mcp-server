@@ -711,7 +711,8 @@ export function renderHealthCheck(payload: HealthCheckPayload): string {
       "",
       `MCP server: v${payload.mcp_server_version}`,
       "",
-      "_Run `komodo_configure` to connect to a Komodo instance._",
+      "_Set `[komodo]` in config.toml (or `KOMODO_URL`/`KOMODO_API_KEY` etc. env vars) and restart, " +
+        "or sign in via local login if per-user authentication is enabled._",
     ];
     return lines.join("\n");
   }

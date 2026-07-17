@@ -17,7 +17,14 @@
 import { defineTool, structured, z } from "mcp-server-framework";
 import { Types } from "komodo_client";
 import { ToolCategories, ToolScopes, config } from "../config/index.js";
-import { requireClient, wrapApiCall, renderUpdateList, renderUpdateInfo, tryRegisterResource } from "../utils/index.js";
+import {
+  requireClient,
+  requireKomodoPermission,
+  wrapApiCall,
+  renderUpdateList,
+  renderUpdateInfo,
+  tryRegisterResource,
+} from "../utils/index.js";
 import {
   updateIdSchema,
   updateListOutputSchema,
@@ -49,7 +56,9 @@ function projectFullSummary(u: UpdateFull) {
     status: u.status,
     success: u.success,
     start_ts: u.start_ts,
-    ...(u.end_ts !== undefined ? { end_ts: u.end_ts } : {}),
+    // @sdk-constraint — Update.end_ts is Option<I64> in Komodo Core, serialized as JSON null
+    // while an update is still running; the komodo_client TS type (`end_ts?: I64`) hides that.
+    ...(u.end_ts != null ? { end_ts: u.end_ts } : {}),
     target_type: u.target.type,
     ...(u.target.id ? { target_id: u.target.id } : {}),
     ...(u.operator ? { username: u.operator } : {}),
@@ -98,7 +107,10 @@ export const listUpdatesTool = defineTool({
     const limit = args.page_size ?? allItems.length;
     const items = allItems.slice(0, limit);
 
-    const pageInfo = result.next_page !== undefined ? { next_cursor: String(result.next_page) } : undefined;
+    // @sdk-constraint — next_page is Option<u32> in Komodo Core: JSON null on the last page
+    // (the TS type hides that). `!== undefined` would turn that into next_cursor: "null",
+    // advertising a bogus next page forever.
+    const pageInfo = result.next_page != null ? { next_cursor: String(result.next_page) } : undefined;
 
     const payload = { items, ...(pageInfo && { page: pageInfo }) };
     return structured(payload, { text: renderUpdateList(payload) });
@@ -124,6 +136,10 @@ export const getUpdateInfoTool = defineTool({
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
     const result = await wrapApiCall("getUpdate", () => komodo.client.read("GetUpdate", { id: args.id }), abortSignal);
+    // Post-fetch check: the target resource is only known once the Update is read (there's
+    // no way to know which resource an update id refers to beforehand). Defense-in-depth before
+    // returning log content — the wrapApiCall 403 backstop already covers the read above.
+    await requireKomodoPermission(result.target, Types.PermissionLevel.Read);
     const summary = projectFullSummary(result);
     const link = tryRegisterResource({
       ctx: { sessionId },

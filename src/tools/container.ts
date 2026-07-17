@@ -27,6 +27,7 @@ import {
 } from "../config/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -74,6 +75,7 @@ export const listContainersTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
     const containers = await wrapApiCall(
       "listContainers",
       () => komodo.client.read("ListDockerContainers", { server: args.server }),
@@ -112,6 +114,7 @@ export const inspectContainerTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "inspectContainer",
       () => komodo.client.read("InspectDockerContainer", { server: args.server, container: args.container }),
@@ -169,6 +172,7 @@ export const getContainerLogsTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
 
     const result: Log = await wrapApiCall(
       "getContainerLogs",
@@ -248,6 +252,7 @@ export const searchContainerLogsTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Read);
 
     const result: Log = await wrapApiCall(
       "searchContainerLogs",
@@ -331,6 +336,7 @@ export const containerActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Server", id: args.server }, Types.PermissionLevel.Execute);
     const apiAction = CONTAINER_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action}Container`,

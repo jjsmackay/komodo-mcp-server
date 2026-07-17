@@ -24,6 +24,8 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -107,6 +109,7 @@ export const getSwarmInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const result = await wrapApiCall(
       "getSwarm",
       () => komodo.client.read("GetSwarm", { swarm: args.swarm }),
@@ -153,6 +156,7 @@ export const listSwarmNodesTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const nodes = await wrapApiCall(
       "listSwarmNodes",
       () => komodo.client.read("ListSwarmNodes", { swarm: args.swarm }),
@@ -188,6 +192,7 @@ export const listSwarmServicesTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Read);
     const services = await wrapApiCall(
       "listSwarmServices",
       () => komodo.client.read("ListSwarmServices", { swarm: args.swarm }),
@@ -199,7 +204,7 @@ export const listSwarmServicesTool = defineTool({
       ...(s.Name ? { name: s.Name } : {}),
       ...(s.Image ? { image: s.Image } : {}),
       ...(s.Mode ? { mode: typeof s.Mode === "string" ? s.Mode : JSON.stringify(s.Mode) } : {}),
-      ...(s.Replicas !== undefined ? { replicas: s.Replicas } : {}),
+      ...(s.Replicas != null ? { replicas: s.Replicas } : {}),
     }));
 
     const { items, page } = paginate(allItems, args.cursor, args.page_size);
@@ -231,6 +236,7 @@ export const swarmActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Execute);
     const apiAction = SWARM_ACTION_API_MAP[args.action];
 
     let params: Record<string, unknown>;
@@ -258,6 +264,16 @@ export const swarmActionTool = defineTool({
         if (!args.stacks || args.stacks.length === 0) throw AppErrorFactory.validation.fieldRequired("stacks");
         params = { swarm: args.swarm, stacks: args.stacks, detach: args.detach ?? false };
         break;
+    }
+
+    if (args.action !== "update_node") {
+      const removeTargets = args.nodes ?? args.services ?? args.stacks ?? [];
+      await requireDestructiveConfirmation({
+        action: args.action.replace(/_/g, " "),
+        resourceType: "swarm",
+        resourceId: args.swarm,
+        detail: `Targets: ${removeTargets.join(", ")}`,
+      });
     }
 
     const update = await wrapExecuteAndPoll(
@@ -338,6 +354,8 @@ export const deleteSwarmTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Swarm", id: args.swarm }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "swarm", resourceId: args.swarm });
     const result = await wrapApiCall(
       "deleteSwarm",
       () => komodo.client.write("DeleteSwarm", { id: args.swarm }),

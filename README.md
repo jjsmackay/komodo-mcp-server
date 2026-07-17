@@ -22,7 +22,7 @@ Komodo MCP Server enables seamless interaction between AI assistants (like Claud
 
 ### 🛠️ Complete Infrastructure Control
 
-- **70 Tools, 16 Categories** — Full lifecycle management for containers, stacks, deployments, servers, builds, repos, procedures, actions, alerters, Docker Swarms (Komodo v2), variables, resource syncs and update history — from listing and inspecting to deploying, building, scaling and destroying.
+- **69 Tools, 16 Categories** — Full lifecycle management for containers, stacks, deployments, servers, builds, repos, procedures, actions, alerters, Docker Swarms (Komodo v2), variables, resource syncs and update history — from listing and inspecting to deploying, building, scaling and destroying.
 - **Remote Terminal Access** — Execute commands on servers, containers, deployments, and stack services with real-time output streaming, exit codes, and progress reporting.
 - **Log Search & Analysis** — Pattern-based log search across containers with configurable tail limits and match counting.
 
@@ -35,7 +35,8 @@ Komodo MCP Server enables seamless interaction between AI assistants (like Claud
 ### 🔐 Security & Authentication
 
 - **Three Auth Methods** — API Key/Secret (recommended), username/password, or JWT token. All support Docker secrets via `*_FILE` variants.
-- **Runtime Configuration** — Set or change credentials dynamically via `komodo_configure` without restarting the server.
+- **Auth Enabled by Default** — Per-user local login in HTTP mode unless explicitly disabled. The global `[komodo]` connection is configured once at startup (or via env vars) and used only for stdio or auth-disabled deployments.
+- **Confirmation for Destructive Actions** — Deletes, destroys, prunes, and shell execution ask the human operator for explicit approval first (MCP elicitation with a confirm checkbox). Fail-closed on clients that can't prompt; tunable via `KOMODO_CONFIRM_DESTRUCTIVE` / `KOMODO_CONFIRM_FALLBACK`.
 - **Hardened by Default** — Input validation (Zod), secret scrubbing in logs, rate limiting, DNS rebinding protection, and security headers via Helmet.
 
 ### ⚡ Reliability & Operations
@@ -47,11 +48,11 @@ Komodo MCP Server enables seamless interaction between AI assistants (like Claud
 *Built on [mcp-server-framework](https://github.com/MP-Tool/mcp-server-framework) — a production-ready TypeScript MCP server framework with structured logging, OpenTelemetry, and session management.*
 
 
-## Available Tools (70)
+## Available Tools (69)
 
 | Category | Tools |
 |----------|-------|
-| **Configuration** | `komodo_configure`, `komodo_health_check` |
+| **Configuration** | `komodo_health_check` |
 | **Containers** | `komodo_container_list`, `komodo_container_inspect`, `komodo_container_logs`, `komodo_container_search_logs`, `komodo_container_action` *(start/stop/restart/pause/unpause)* |
 | **Servers** | `komodo_server_list`, `komodo_server_info`, `komodo_server_stats`, `komodo_server_apply` *(create/update)*, `komodo_server_delete`, `komodo_server_action` *(start_all/restart_all/pause_all/unpause_all/stop_all\_containers, prune\_\*, delete\_network/image/volume)* |
 | **Stacks** | `komodo_stack_list`, `komodo_stack_info`, `komodo_stack_apply` *(create/update)*, `komodo_stack_delete`, `komodo_stack_action` *(deploy/pull/start/restart/pause/unpause/stop/destroy)* |
@@ -214,6 +215,8 @@ GPL-3.0 License - see [LICENSE](LICENSE) for details.
 
 ## Security
 Report security vulnerabilities via GitHub's Private Vulnerability Reporting (see [SECURITY.md](SECURITY.md)).
+
+**Destructive-action confirmation:** By default, destructive tools (all `*_delete` tools, `komodo_exec`, stack/deployment `destroy`, server `stop_all`/`prune_*`/`delete_*`, swarm `remove_*`, and procedure/action/resource-sync `run`) require the human operator to approve an MCP elicitation prompt — "accept" plus a ticked confirm checkbox — before anything executes. Clients that cannot prompt (no elicitation support, or stateless HTTP mode) are refused by default. Tune with `KOMODO_CONFIRM_FALLBACK=allow` (execute with a warning on such clients) or `KOMODO_CONFIRM_DESTRUCTIVE=false` (disable the feature) — relevant for stdio setups whose client lacks elicitation support.
 
 **Best practices:**
 - Never commit credentials

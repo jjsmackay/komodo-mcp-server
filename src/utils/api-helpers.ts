@@ -7,16 +7,27 @@
  * @module utils/api-helpers
  */
 
+import { Types } from "komodo_client";
 import type { KomodoClient } from "../client.js";
 import {
   ClientNotConfiguredError,
   ApiError,
   ConnectionError,
   AuthenticationError,
+  ConfirmationRequiredError,
   extractKomodoError,
 } from "../errors/index.js";
-import { OperationCancelledError } from "mcp-server-framework";
-import { komodoConnection } from "../client.js";
+import {
+  OperationCancelledError,
+  getCurrentToolContext,
+  AuthorizationError,
+  logAuditEvent,
+  logger,
+  elicitConfirmation,
+} from "mcp-server-framework";
+import { connectUserClient, getGlobalClient } from "../client.js";
+import { komodoIdentity, meetsPermissionLevel } from "../auth/komodo-identity.js";
+import { config } from "../config/index.js";
 
 // ============================================================================
 // Error Code Sets
@@ -33,15 +44,197 @@ const TIMEOUT_ERROR_CODES = new Set(["ECONNABORTED", "UND_ERR_CONNECT_TIMEOUT"])
 // ============================================================================
 
 /**
- * Returns the connected Komodo client.
- * Throws ClientNotConfiguredError with a state-aware message if not connected.
+ * Returns the Komodo client for the current tool call, resolved by operating mode.
+ *
+ * Reads the current tool context's auth (via AsyncLocalStorage, set by the framework
+ * before each handler runs):
+ * - **Authenticated** request → a client scoped to that user's minted Komodo JWT, built
+ *   fresh from the request's own `auth.extra` so users are strictly isolated.
+ * - **Anonymous** request (stdio, or HTTP with auth disabled) → the global service
+ *   connection from the `[komodo]` credentials.
+ *
+ * Synchronous by design (no `await` at the ~80 call sites): the per-user client is a thin,
+ * stateless JWT wrapper, and the global connection is already established at startup.
  */
 export function requireClient(): KomodoClient {
-  const client = komodoConnection.getClient();
-  if (!client) {
+  const auth = getCurrentToolContext()?.auth;
+  const identity = komodoIdentity.read(auth);
+
+  if (identity) {
+    // Authenticated Komodo user → their own JWT-scoped client.
+    return connectUserClient(identity.komodoJwt);
+  }
+
+  if (auth) {
+    // Authenticated to the MCP server but no Komodo identity is bound. This should not
+    // occur — the OAuth hooks deny sessions for users that don't exist in Komodo — so
+    // treat it as a misconfiguration rather than silently falling back to global creds.
     throw ClientNotConfiguredError.notConfigured();
   }
+
+  // Anonymous request → global service connection (stdio / auth-disabled HTTP).
+  const client = getGlobalClient();
+  if (!client) throw ClientNotConfiguredError.notConfigured();
   return client;
+}
+
+// ============================================================================
+// Per-Resource Authorization (fail-early)
+// ============================================================================
+
+/** Short-TTL cache of the current user's permission level per resource (avoids an extra call per tool). */
+interface CachedPermission {
+  readonly level: Types.PermissionLevel;
+  readonly expiresAt: number;
+}
+const permissionCache = new Map<string, CachedPermission>();
+const PERMISSION_CACHE_TTL_MS = 30_000;
+const PERMISSION_CACHE_MAX = 5_000;
+
+/**
+ * Enforce, **before** the actual API call, that the current authenticated user holds at
+ * least `required` permission on `target` in Komodo. Throws a clear {@link AuthorizationError}
+ * and writes a `permission.denied` audit entry when they don't.
+ *
+ * No-op for anonymous/global-connection requests (stdio / auth-disabled) — there is no
+ * per-user identity to check; the global service account governs access in that mode.
+ *
+ * @param target - The Komodo resource (`{ type, id }`)
+ * @param required - The minimum permission level the tool needs (Read / Execute / Write)
+ */
+export async function requireKomodoPermission(
+  target: Types.ResourceTarget,
+  required: Types.PermissionLevel,
+): Promise<void> {
+  const identity = komodoIdentity.read(getCurrentToolContext()?.auth);
+  if (!identity) return; // anonymous / global mode — not per-user gated here
+
+  const cacheKey = `${identity.komodoUserId}:${target.type}:${target.id}`;
+  const now = Date.now();
+
+  let level: Types.PermissionLevel;
+  const cached = permissionCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    level = cached.level;
+  } else {
+    const client = requireClient();
+    const result = await wrapApiCall(`check permission on ${target.type} '${target.id}'`, () =>
+      client.client.read("GetPermission", { target }),
+    );
+    level = result.level;
+    if (permissionCache.size >= PERMISSION_CACHE_MAX) permissionCache.clear();
+    permissionCache.set(cacheKey, { level, expiresAt: now + PERMISSION_CACHE_TTL_MS });
+  }
+
+  if (!meetsPermissionLevel(level, required)) {
+    logAuditEvent({
+      category: "permission",
+      action: "permission.denied",
+      outcome: "denied",
+      actor: { userId: identity.komodoUserId, username: identity.username },
+      target: `${target.type}:${target.id}`,
+      detail: { required, have: level, phase: "pre-check" },
+    });
+    throw new AuthorizationError(
+      `Insufficient Komodo permission: ${target.type} '${target.id}' requires ${required}, but you have ${level}.`,
+    );
+  }
+}
+
+// ============================================================================
+// Destructive-Action Confirmation (manual user approval via MCP elicitation)
+// ============================================================================
+
+/** Describes the destructive operation a confirmation prompt is asking about. */
+export interface DestructiveConfirmationRequest {
+  /** Verb shown to the user, e.g. "delete", "destroy", "run", "execute command on" */
+  readonly action: string;
+  /** Resource kind, e.g. "stack", "server", "resource sync" */
+  readonly resourceType: string;
+  /** Resource id or name the user should recognize */
+  readonly resourceId: string;
+  /** Optional extra line (e.g. the shell command, or a cascade warning) */
+  readonly detail?: string | undefined;
+}
+
+/**
+ * Require, **before** the actual API call, that the human operator manually confirms a
+ * destructive operation via the client's MCP elicitation UI (accept + confirm checkbox).
+ *
+ * Policy (config-driven):
+ * - `KOMODO_CONFIRM_DESTRUCTIVE=false` → no-op (feature disabled).
+ * - Prompt declined / cancelled / timed out → throws {@link ConfirmationRequiredError}
+ *   and writes a `confirmation.declined` audit entry. Never falls open.
+ * - Client cannot prompt (no elicitation capability, stateless mode):
+ *   `KOMODO_CONFIRM_FALLBACK=deny` (default) → throws + `confirmation.unavailable` audit;
+ *   `KOMODO_CONFIRM_FALLBACK=allow` → executes with a warning + `confirmation.bypassed` audit.
+ *
+ * Unlike {@link requireKomodoPermission} this also applies to anonymous/global-mode
+ * requests — confirmation is about the human at the client, not the Komodo identity.
+ */
+export async function requireDestructiveConfirmation(req: DestructiveConfirmationRequest): Promise<void> {
+  if (!config.KOMODO_CONFIRM_DESTRUCTIVE) return;
+
+  const identity = komodoIdentity.read(getCurrentToolContext()?.auth);
+  const actor = { ...(identity && { userId: identity.komodoUserId, username: identity.username }) };
+  const target = `${req.resourceType}:${req.resourceId}`;
+
+  const message = [
+    `⚠️ ${capitalize(req.action)} ${req.resourceType} "${req.resourceId}"?`,
+    ...(req.detail ? [req.detail] : []),
+    "This action is destructive and may not be reversible.",
+  ].join("\n");
+
+  const outcome = await elicitConfirmation({ message });
+
+  switch (outcome) {
+    case "accepted":
+      return; // the framework's tool.call audit records the executed call
+
+    case "unsupported":
+      if (config.KOMODO_CONFIRM_FALLBACK === "allow") {
+        logger.warn(
+          "Destructive action executed WITHOUT user confirmation (client lacks elicitation, KOMODO_CONFIRM_FALLBACK=allow): %s %s",
+          req.action,
+          target,
+        );
+        logAuditEvent({
+          category: "confirmation",
+          action: "confirmation.bypassed",
+          outcome: "info",
+          actor,
+          target,
+          detail: { action: req.action, reason: "client lacks elicitation support" },
+        });
+        return;
+      }
+      logAuditEvent({
+        category: "confirmation",
+        action: "confirmation.unavailable",
+        outcome: "denied",
+        actor,
+        target,
+        detail: { action: req.action, fallback: config.KOMODO_CONFIRM_FALLBACK },
+      });
+      throw ConfirmationRequiredError.unavailable(req.action, req.resourceType, req.resourceId);
+
+    case "declined":
+    case "cancelled":
+    case "timeout":
+      logAuditEvent({
+        category: "confirmation",
+        action: "confirmation.declined",
+        outcome: "denied",
+        actor,
+        target,
+        detail: { action: req.action, outcome },
+      });
+      throw ConfirmationRequiredError.declined(req.action, req.resourceType, req.resourceId, outcome);
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // ============================================================================
@@ -89,6 +282,18 @@ function getErrorCode(error: unknown): string | undefined {
 }
 
 /**
+ * Detects a Komodo permission denial. Komodo returns these as HTTP 403, or — for several
+ * resource checks — as HTTP 500 carrying a permission-related message.
+ */
+function isKomodoPermissionDenied(status: number, message: string): boolean {
+  if (status === 403) return true;
+  if (status >= 400) {
+    return /does not have required permission|must have at least|permission denied|not authorized/i.test(message);
+  }
+  return false;
+}
+
+/**
  * Wraps an API call with error handling and cancellation support.
  *
  * Properly handles komodo_client rejections which are plain objects:
@@ -124,8 +329,20 @@ export async function wrapApiCall<T>(operation: string, apiCall: () => Promise<T
       if (status === 401) {
         throw AuthenticationError.unauthorized();
       }
-      if (status === 403) {
-        throw AuthenticationError.forbidden();
+      // Permission denials — backstop for paths without a pre-check, list endpoints, or
+      // group-permission cases. Komodo signals these as 403, or as 500 with a permission
+      // message. Surface a clean MCP authorization error + audit entry instead of a raw 500.
+      if (isKomodoPermissionDenied(status, message)) {
+        const identity = komodoIdentity.read(getCurrentToolContext()?.auth);
+        logAuditEvent({
+          category: "permission",
+          action: "permission.denied",
+          outcome: "denied",
+          actor: { ...(identity && { userId: identity.komodoUserId, username: identity.username }) },
+          target: operation,
+          detail: { status, phase: "backstop", message },
+        });
+        throw new AuthorizationError(`Komodo denied this operation — insufficient permissions: ${message}`);
       }
       // HTTP errors (4xx, 5xx)
       if (status >= 400) {

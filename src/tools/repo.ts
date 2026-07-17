@@ -19,6 +19,8 @@ import { ToolCategories, ToolScopes, config } from "../config/index.js";
 import { AppErrorFactory } from "../errors/index.js";
 import {
   requireClient,
+  requireKomodoPermission,
+  requireDestructiveConfirmation,
   wrapApiCall,
   wrapExecuteAndPoll,
   buildActionResult,
@@ -102,6 +104,7 @@ export const getRepoInfoTool = defineTool({
   requiredScopes: [ToolScopes.READ],
   handler: async (args, { abortSignal, sessionId }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Repo", id: args.repo }, Types.PermissionLevel.Read);
     const result = await wrapApiCall("getRepo", () => komodo.client.read("GetRepo", { repo: args.repo }), abortSignal);
     const link = tryRegisterResource({
       ctx: { sessionId },
@@ -152,6 +155,7 @@ export const repoActionTool = defineTool({
   requiredScopes: [ToolScopes.OPERATE],
   handler: async (args, { abortSignal, reportProgress }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Repo", id: args.repo }, Types.PermissionLevel.Execute);
     const apiAction = REPO_ACTION_API_MAP[args.action];
     const update = await wrapExecuteAndPoll(
       `${args.action} repo '${args.repo}'`,
@@ -222,6 +226,8 @@ export const deleteRepoTool = defineTool({
   requiredScopes: [ToolScopes.ADMIN],
   handler: async (args, { abortSignal }) => {
     const komodo = requireClient();
+    await requireKomodoPermission({ type: "Repo", id: args.repo }, Types.PermissionLevel.Write);
+    await requireDestructiveConfirmation({ action: "delete", resourceType: "repo", resourceId: args.repo });
     const result = await wrapApiCall(
       "deleteRepo",
       () => komodo.client.write("DeleteRepo", { id: args.repo }),
